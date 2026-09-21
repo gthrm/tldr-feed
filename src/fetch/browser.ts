@@ -7,9 +7,9 @@ export type BrowserItem = { title: string; link: string; isoDate?: string; conte
 
 export type BrowserConfig = {
   url: string;
-  itemSelector: string;           // one listing entry
-  titleSelector: string;          // anchor inside the entry: text + href
-  dateSelector?: string;          // element carrying a datetime attribute
+  itemSelector: string; // one listing entry
+  titleSelector: string; // anchor inside the entry: text + href
+  dateSelector?: string; // element carrying a datetime attribute
   limit?: number;
 };
 
@@ -40,15 +40,18 @@ export async function closeBrowser(): Promise<void> {
 }
 
 export async function fetchWithBrowser(cfg: BrowserConfig): Promise<BrowserItem[]> {
-  const ctx = await (await getBrowser()).newContext({
+  const ctx = await (
+    await getBrowser()
+  ).newContext({
     locale: 'en-US',
     viewport: { width: 1280, height: 900 },
   });
   // Images and fonts are dead weight when we only want links and titles.
   // abort() rejects if the request was already handled or the context closed;
   // unhandled, that rejection is fatal to the process.
-  await ctx.route('**/*.{png,jpg,jpeg,gif,webp,avif,svg,woff,woff2,ttf,mp4}',
-    (r) => { void r.abort().catch(() => {}); });
+  await ctx.route('**/*.{png,jpg,jpeg,gif,webp,avif,svg,woff,woff2,ttf,mp4}', (r) => {
+    void r.abort().catch(() => {});
+  });
 
   const page = await ctx.newPage();
   try {
@@ -60,7 +63,7 @@ export async function fetchWithBrowser(cfg: BrowserConfig): Promise<BrowserItem[
       ({ itemSelector, titleSelector, dateSelector, origin }) => {
         const out: { title: string; link: string; isoDate?: string; contentSnippet: string }[] = [];
         for (const el of document.querySelectorAll(itemSelector)) {
-          const a = el.querySelector(titleSelector) as HTMLAnchorElement | null;
+          const a = el.querySelector<HTMLAnchorElement>(titleSelector);
           const href = a?.getAttribute('href');
           const title = (a?.textContent ?? '').trim();
           if (!href || title.length < 10) continue;
@@ -95,8 +98,9 @@ export async function fetchWithBrowser(cfg: BrowserConfig): Promise<BrowserItem[
 /** Raw HTML of one page, for sites that refuse plain clients (extract.ts fallback). */
 export async function fetchHtmlWithBrowser(url: string): Promise<string> {
   const ctx = await (await getBrowser()).newContext({ locale: 'en-US' });
-  await ctx.route('**/*.{png,jpg,jpeg,gif,webp,avif,svg,woff,woff2,ttf,mp4}',
-    (r) => { void r.abort().catch(() => {}); });
+  await ctx.route('**/*.{png,jpg,jpeg,gif,webp,avif,svg,woff,woff2,ttf,mp4}', (r) => {
+    void r.abort().catch(() => {});
+  });
   const page = await ctx.newPage();
   try {
     await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 45000 });

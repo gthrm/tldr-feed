@@ -3,8 +3,8 @@
 // This module is stage 2: deciding whether two different URLs are the same story.
 import { normalizeTitle, entityTokens, type Item } from './normalize.ts';
 
-export const SIM_SAME = 0.55;      // at or above: same story, no question
-export const SIM_DIFFERENT = 0.40; // below: different stories
+export const SIM_SAME = 0.55; // at or above: same story, no question
+export const SIM_DIFFERENT = 0.4; // below: different stories
 // between the two: ask the model, it is a handful of calls per slot
 
 function trigrams(s: string): Set<string> {

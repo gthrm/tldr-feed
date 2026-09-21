@@ -18,13 +18,20 @@ function meta(html: string, tag: string): string | undefined {
 
 function decodeEntities(s: string): string {
   return s
-    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&nbsp;/g, ' ');
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;|&#39;/g, "'")
+    .replace(/&nbsp;/g, ' ');
 }
 
 async function get(url: string, timeoutMs = 25000): Promise<string> {
   const res = await fetch(url, {
-    headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8' },
+    headers: {
+      'User-Agent': UA,
+      Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+    },
     redirect: 'follow',
     signal: AbortSignal.timeout(timeoutMs),
   });
@@ -33,10 +40,10 @@ async function get(url: string, timeoutMs = 25000): Promise<string> {
 }
 
 export type SitemapConfig = {
-  sitemap: string;        // sitemap url
-  include: string;        // path fragment an article url must contain
-  exclude?: string[];     // fragments that disqualify (localised copies, index pages)
-  limit?: number;         // how many of the newest to hydrate
+  sitemap: string; // sitemap url
+  include: string; // path fragment an article url must contain
+  exclude?: string[]; // fragments that disqualify (localised copies, index pages)
+  limit?: number; // how many of the newest to hydrate
 };
 
 /** Newest-first article list, hydrated from each page's Open Graph tags. */

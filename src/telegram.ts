@@ -21,9 +21,12 @@ export async function sendMessage(text: string): Promise<void> {
 
     if (res.ok) return;
 
-    const body: any = await res.json().catch(() => ({}));
+    const body = (await res.json().catch(() => ({}))) as {
+      description?: string;
+      parameters?: { retry_after?: number };
+    };
     if (res.status === 429) {
-      const wait = (body?.parameters?.retry_after ?? 5) * 1000;
+      const wait = (body.parameters?.retry_after ?? 5) * 1000;
       await new Promise((r) => setTimeout(r, wait));
       continue;
     }
@@ -31,7 +34,7 @@ export async function sendMessage(text: string): Promise<void> {
       await new Promise((r) => setTimeout(r, 2 ** attempt * 1000));
       continue;
     }
-    throw new Error(`Telegram ${res.status}: ${body?.description ?? 'unknown error'}`);
+    throw new Error(`Telegram ${res.status}: ${body.description ?? 'unknown error'}`);
   }
   throw new Error('Telegram: retries exhausted');
 }

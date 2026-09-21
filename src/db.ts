@@ -1,12 +1,39 @@
 // SQLite is the memory between slots: what we have seen, what we already posted.
 import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
+import type { Item } from './normalize.ts';
 import { dirname } from 'node:path';
 
-const path = process.env.DB_PATH ?? 'data/newsbot.db';
+const path = process.env.DB_PATH ?? 'data/tldr-feed.db';
 mkdirSync(dirname(path), { recursive: true });
 
 export const db = new Database(path);
+
+/** Rows as SQLite stores them: snake_case, dates as epoch milliseconds. */
+export type ItemRow = {
+  id: string;
+  source: string;
+  section: string;
+  title: string;
+  url: string;
+  domain: string;
+  published_at: number | null;
+  raw_summary: string | null;
+  points: number | null;
+  weight: number;
+};
+
+export type PostedRow = { cluster_key: string; title: string };
+export type SummaryRow = { summary: string; minutes: number };
+export type SourceStateRow = {
+  source: string;
+  etag: string | null;
+  last_modified: string | null;
+  last_ok: number | null;
+  last_error: string | null;
+};
+
+type CountRow = { n: number };
 db.pragma('journal_mode = WAL');
 
 db.exec(`
@@ -55,19 +82,21 @@ const now = () => Date.now();
 
 // Existing databases predate consumed_at; add it and treat everything already
 // there as consumed, so a migration does not repost yesterday's news.
-const columns = db.prepare('PRAGMA table_info(items)').all() as any[];
+const columns = db.prepare('PRAGMA table_info(items)').all() as { name: string }[];
 if (!columns.some((c) => c.name === 'consumed_at')) {
   db.exec('ALTER TABLE items ADD COLUMN consumed_at INTEGER');
   db.exec('UPDATE items SET consumed_at = first_seen');
 }
 // After the column is guaranteed to exist, never before it.
-db.exec('CREATE INDEX IF NOT EXISTS items_unconsumed ON items(consumed_at) WHERE consumed_at IS NULL');
+db.exec(
+  'CREATE INDEX IF NOT EXISTS items_unconsumed ON items(consumed_at) WHERE consumed_at IS NULL',
+);
 
 export const isKnown = db.prepare('SELECT 1 FROM items WHERE id = ?');
 
 /** True before the first run has recorded anything: everything would look new. */
 export function isColdStart(): boolean {
-  return (db.prepare('SELECT COUNT(*) AS n FROM items').get() as any).n === 0;
+  return (db.prepare('SELECT COUNT(*) AS n FROM items').get() as CountRow).n === 0;
 }
 const insertItem = db.prepare(`
   INSERT OR IGNORE INTO items
@@ -76,16 +105,22 @@ const insertItem = db.prepare(`
 `);
 
 /** Returns only the items we had not seen before. */
-export function recordNew(items: any[]): any[] {
-  const fresh: any[] = [];
-  const tx = db.transaction((batch: any[]) => {
+export function recordNew<T extends Item>(items: T[]): T[] {
+  const fresh: T[] = [];
+  const tx = db.transaction((batch: T[]) => {
     for (const it of batch) {
       const res = insertItem.run({
-        id: it.id, source: it.source, section: it.section, title: it.title,
-        url: it.url, domain: it.domain,
+        id: it.id,
+        source: it.source,
+        section: it.section,
+        title: it.title,
+        url: it.url,
+        domain: it.domain,
         published_at: it.publishedAt ? it.publishedAt.getTime() : null,
-        raw_summary: it.rawSummary ?? '', points: it.points ?? null,
-        weight: it.weight, first_seen: now(),
+        raw_summary: it.rawSummary ?? '',
+        points: it.points ?? null,
+        weight: it.weight,
+        first_seen: now(),
       });
       if (res.changes > 0) fresh.push(it);
     }
@@ -108,11 +143,15 @@ const selPending = db.prepare(`
 `);
 const updConsumed = db.prepare('UPDATE items SET consumed_at = ? WHERE id = ?');
 const selWasPosted = db.prepare('SELECT 1 FROM posted WHERE cluster_key = ? AND posted_at > ?');
-const selRecentTitles = db.prepare('SELECT cluster_key, title FROM posted ORDER BY posted_at DESC LIMIT ?');
+const selRecentTitles = db.prepare(
+  'SELECT cluster_key, title FROM posted ORDER BY posted_at DESC LIMIT ?',
+);
 const insSummary = db.prepare(
   'INSERT OR REPLACE INTO summaries (content_hash, model, summary, minutes, created_at) VALUES (?,?,?,?,?)',
 );
-const selSummary = db.prepare('SELECT summary, minutes FROM summaries WHERE content_hash = ? AND model = ?');
+const selSummary = db.prepare(
+  'SELECT summary, minutes FROM summaries WHERE content_hash = ? AND model = ?',
+);
 const selSourceState = db.prepare('SELECT * FROM source_state WHERE source = ?');
 const updSourceState = db.prepare(`
   INSERT INTO source_state (source, etag, last_modified, last_ok, last_error)
@@ -131,8 +170,8 @@ const delSummaries = db.prepare('DELETE FROM summaries WHERE created_at < ?');
  * The poller runs every 20 minutes; slots are 80 minutes apart, so without
  * this a fast feed rotates items out between slots and they are lost.
  */
-export function pendingItems(maxAgeHours = 36): any[] {
-  return selPending.all(now() - maxAgeHours * 3.6e6) as any[];
+export function pendingItems(maxAgeHours = 36): ItemRow[] {
+  return selPending.all(now() - maxAgeHours * 3.6e6) as ItemRow[];
 }
 
 /** A slot has considered these, whether or not they made the digest. */
@@ -152,8 +191,8 @@ export function wasPosted(clusterKey: string, windowDays = 7): boolean {
 }
 
 /** Titles posted recently, for the stage-4 similarity safety net. */
-export function recentPostedTitles(limit = 200): { cluster_key: string; title: string }[] {
-  return selRecentTitles.all(limit) as any[];
+export function recentPostedTitles(limit = 200): PostedRow[] {
+  return selRecentTitles.all(limit) as PostedRow[];
 }
 
 // Keyed by url AND content: two aggregator pages can yield identical extracted
@@ -162,18 +201,24 @@ export function cacheSummary(hash: string, model: string, summary: string, minut
   insSummary.run(hash, model, summary, minutes, now());
 }
 
-export function cachedSummary(hash: string, model: string): { summary: string; minutes: number } | undefined {
-  return selSummary.get(hash, model) as any;
+export function cachedSummary(hash: string, model: string): SummaryRow | undefined {
+  return selSummary.get(hash, model) as SummaryRow | undefined;
 }
 
-export function getSourceState(source: string): any {
-  return selSourceState.get(source);
+export function getSourceState(source: string): SourceStateRow | undefined {
+  return selSourceState.get(source) as SourceStateRow | undefined;
 }
 
-export function setSourceState(source: string, s: { etag?: string; lastModified?: string; error?: string }): void {
+export function setSourceState(
+  source: string,
+  s: { etag?: string; lastModified?: string; error?: string },
+): void {
   updSourceState.run({
-    source, etag: s.etag ?? null, lm: s.lastModified ?? null,
-    ok: s.error ? null : now(), err: s.error ?? null,
+    source,
+    etag: s.etag ?? null,
+    lm: s.lastModified ?? null,
+    ok: s.error ? null : now(),
+    err: s.error ?? null,
   });
 }
 
@@ -188,8 +233,16 @@ export function closeDb(): void {
   closed = true;
   // Separate blocks: a failing checkpoint must not skip the close, which is the
   // part that actually prevents the native teardown crash.
-  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* not fatal */ }
-  try { db.close(); } catch { /* already closed */ }
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch {
+    /* not fatal */
+  }
+  try {
+    db.close();
+  } catch {
+    /* already closed */
+  }
 }
 
 for (const signal of ['exit', 'SIGINT', 'SIGTERM'] as const) {

@@ -24,7 +24,7 @@ async function getToken(): Promise<string | null> {
   });
   if (!res.ok) throw new Error(`reddit auth ${res.status}: ${(await res.text()).slice(0, 120)}`);
 
-  const body: any = await res.json();
+  const body = (await res.json()) as { access_token: string; expires_in?: number };
   token = { value: body.access_token, expires: Date.now() + (body.expires_in ?? 3600) * 1000 };
   return token.value;
 }
@@ -41,13 +41,18 @@ export async function fetchRedditThread(url: string): Promise<string> {
   });
   if (!res.ok) throw new Error(`reddit api ${res.status}`);
 
-  const body: any = await res.json();
-  const post = body?.[0]?.data?.children?.[0]?.data;
+  type Child<T> = { data?: T };
+  type Post = { title?: string; selftext?: string };
+  type Comment = { body?: string };
+  type Listing = [Child<{ children?: Child<Post>[] }>, Child<{ children?: Child<Comment>[] }>];
+
+  const body = (await res.json()) as Listing;
+  const post = body[0]?.data?.children?.[0]?.data;
   if (!post) return '';
 
-  const comments: string[] = (body?.[1]?.data?.children ?? [])
-    .map((c: any) => c?.data?.body)
-    .filter((b: any) => typeof b === 'string' && b.length > 100)
+  const comments: string[] = (body[1]?.data?.children ?? [])
+    .map((c) => c.data?.body)
+    .filter((b): b is string => typeof b === 'string' && b.length > 100)
     .slice(0, 5);
 
   // A link post has no selftext; the comments are then the whole substance.

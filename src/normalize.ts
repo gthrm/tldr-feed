@@ -3,23 +3,43 @@ import { createHash } from 'node:crypto';
 import { UA } from './fetch/parse-feed.ts';
 
 export type Item = {
-  id: string;            // sha1 of the canonical url
-  source: string;        // source id from sources.yaml
+  id: string; // sha1 of the canonical url
+  source: string; // source id from sources.yaml
   section: string;
   weight: number;
   title: string;
-  url: string;           // canonical, tracking-free, points at the article
+  url: string; // canonical, tracking-free, points at the article
   domain: string;
   publishedAt: Date | null;
-  rawSummary: string;    // whatever the feed gave; a fallback for extraction
-  points?: number;       // engagement signal, used for ranking only
+  rawSummary: string; // whatever the feed gave; a fallback for extraction
+  points?: number; // engagement signal, used for ranking only
 };
 
 const TRACKING = [
-  /^utm_/i, /^at_/i, /^mc_/i, /^_hs/i, /^pk_/i, /^ref$/i, /^ref_src$/i, /^refsrc$/i,
-  /^fbclid$/i, /^gclid$/i, /^dclid$/i, /^msclkid$/i, /^igshid$/i, /^twclid$/i,
-  /^cmpid$/i, /^ncid$/i, /^sr_share$/i, /^guccounter$/i, /^guce_referrer/i,
-  /^campaign_id$/i, /^__twitter_impression$/i, /^s$/i, /^smid$/i, /^partner$/i,
+  /^utm_/i,
+  /^at_/i,
+  /^mc_/i,
+  /^_hs/i,
+  /^pk_/i,
+  /^ref$/i,
+  /^ref_src$/i,
+  /^refsrc$/i,
+  /^fbclid$/i,
+  /^gclid$/i,
+  /^dclid$/i,
+  /^msclkid$/i,
+  /^igshid$/i,
+  /^twclid$/i,
+  /^cmpid$/i,
+  /^ncid$/i,
+  /^sr_share$/i,
+  /^guccounter$/i,
+  /^guce_referrer/i,
+  /^campaign_id$/i,
+  /^__twitter_impression$/i,
+  /^s$/i,
+  /^smid$/i,
+  /^partner$/i,
 ];
 
 /** Strip tracking junk and normalise the shape so the same article hashes the same. */
@@ -62,9 +82,16 @@ export function isDomainRoot(raw: string): boolean {
 /** Follow redirect shims (feedproxy, t.co, news.google) to the real article. */
 export async function resolveRedirects(url: string, timeoutMs = 10000): Promise<string> {
   const host = (() => {
-    try { return new URL(url).hostname; } catch { return ''; }
+    try {
+      return new URL(url).hostname;
+    } catch {
+      return '';
+    }
   })();
-  const isShim = /(^|\.)(feedproxy\.google\.com|news\.google\.com|t\.co|bit\.ly|buff\.ly|trib\.al|dlvr\.it|ift\.tt)$/i.test(host);
+  const isShim =
+    /(^|\.)(feedproxy\.google\.com|news\.google\.com|t\.co|bit\.ly|buff\.ly|trib\.al|dlvr\.it|ift\.tt)$/i.test(
+      host,
+    );
   if (!isShim) return url;
 
   try {
@@ -93,12 +120,50 @@ export function domainOf(url: string): string {
 }
 
 /** Outlets append their own name to feed titles; it is noise for comparison. */
-const OUTLET_SUFFIX = /\s*[|–—-]\s*(techcrunch|the verge|ars technica|wired|engadget|the register|venturebeat|infoq|bleepingcomputer|reuters|bloomberg|cnbc|zdnet)\s*$/i;
+const OUTLET_SUFFIX =
+  /\s*[|–—-]\s*(techcrunch|the verge|ars technica|wired|engadget|the register|venturebeat|infoq|bleepingcomputer|reuters|bloomberg|cnbc|zdnet)\s*$/i;
 
 const STOPWORDS = new Set([
-  'a','an','the','and','or','but','of','to','in','on','for','with','at','by','from',
-  'is','are','was','were','be','been','it','its','as','that','this','these','those',
-  'new','now','how','why','what','says','said','will','has','have','after','over',
+  'a',
+  'an',
+  'the',
+  'and',
+  'or',
+  'but',
+  'of',
+  'to',
+  'in',
+  'on',
+  'for',
+  'with',
+  'at',
+  'by',
+  'from',
+  'is',
+  'are',
+  'was',
+  'were',
+  'be',
+  'been',
+  'it',
+  'its',
+  'as',
+  'that',
+  'this',
+  'these',
+  'those',
+  'new',
+  'now',
+  'how',
+  'why',
+  'what',
+  'says',
+  'said',
+  'will',
+  'has',
+  'have',
+  'after',
+  'over',
 ]);
 
 export function normalizeTitle(title: string): string {

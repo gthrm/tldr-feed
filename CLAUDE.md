@@ -1,4 +1,4 @@
-# newsbot
+# tldr-feed
 
 TLDR-style tech/dev/AI news digest → Telegram channel, 10 slots a day between
 09:00 and 21:00 CET, only when there is something new.
@@ -40,6 +40,7 @@ right one, a model whose quality is unverified: ASK. The user is at the keyboard
 clears these in seconds. One short sentence naming the blocker and what clears it.
 
 ### NEVER NARROW THE SCOPE
+
 The audience is people who work in tech and are curious far beyond it: games,
 culture, history, science, language, oddities — the Hacker News front page.
 Not "developers", not "tech news only".
@@ -54,11 +55,13 @@ Never invent limits either — no cap on items per digest, no cap per source.
 Every new item is posted. If a boundary is not in this file, do not add one.
 
 ### Never hunt for credentials
+
 Do not grep the filesystem, shell configs or other projects for API keys.
 Write `.env.example`, tell the user which variable to fill, and stop.
 The canonical name is `OPENAI_API_KEY` — not `OPEN_AI_API_KEY`.
 
 ### Verify before asserting — never answer from memory
+
 - **Model ids and pricing:** always check the official OpenAI docs before naming a
   model. The knowledge cutoff makes ids stale; `gpt-5.4-mini` was recommended here
   and was already two generations old. Current family is GPT-5.6
@@ -70,14 +73,17 @@ The canonical name is `OPENAI_API_KEY` — not `OPEN_AI_API_KEY`.
   not by price.
 
 ### Say what is untested, up front
+
 If something has not been verified, label it as an assumption in the same
 sentence that introduces it — not after being challenged.
 
 ### Uniform output format
+
 Every source renders identically. No per-source special cases, no extra fields
 for Hacker News or anyone else. A source is one line of plain text.
 
 ### Links point at the article
+
 Every link goes to the specific piece being summarised, never to a domain root
 and never to a discussion thread. `npm run check-links` enforces this.
 

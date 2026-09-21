@@ -15,7 +15,16 @@ export function sanitizeXml(xml: string): string {
   return xml.replace(/&(?!(?:#\d+|#x[0-9a-fA-F]+|[a-zA-Z][a-zA-Z0-9]{1,31});)/g, '&amp;');
 }
 
-export type FeedResult = { items: any[]; sanitized: boolean };
+export type FeedItem = {
+  title?: string;
+  link?: string;
+  isoDate?: string;
+  pubDate?: string;
+  contentSnippet?: string;
+  content?: string;
+};
+
+export type FeedResult = { items: FeedItem[]; sanitized: boolean };
 
 export async function fetchFeed(url: string, etag?: string, lastModified?: string) {
   const headers: Record<string, string> = { 'User-Agent': UA, Accept: ACCEPT };

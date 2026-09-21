@@ -11,11 +11,14 @@ const rows = db
     `SELECT i.url, i.title, i.source FROM items i
      WHERE i.first_seen > ? ORDER BY i.first_seen DESC LIMIT 200`,
   )
-  .all(Date.now() - hours * 3.6e6) as { url: string; title: string; source: string }[];
+  .all(Date.now() - hours * 3.6e6) as Row[];
 
 console.log(`checking ${rows.length} links from the last ${hours}h\n`);
 
-async function check(row: { url: string; title: string; source: string }) {
+type Row = { url: string; title: string; source: string };
+type Checked = Row & { verdict: string; code: number; err?: string };
+
+async function check(row: Row): Promise<Checked> {
   if (isDomainRoot(row.url)) return { ...row, verdict: 'DOMAIN ROOT', code: 0 };
   try {
     const res = await fetch(row.url, {
@@ -26,12 +29,13 @@ async function check(row: { url: string; title: string; source: string }) {
     });
     // Some hosts refuse HEAD but serve GET fine; only 4xx/5xx counts as broken.
     return { ...row, verdict: res.ok || res.status === 405 ? 'ok' : 'BROKEN', code: res.status };
-  } catch (err: any) {
-    return { ...row, verdict: 'UNREACHABLE', code: 0, err: String(err?.message ?? err).slice(0, 50) };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ...row, verdict: 'UNREACHABLE', code: 0, err: message.slice(0, 50) };
   }
 }
 
-const out: any[] = [];
+const out: Checked[] = [];
 let i = 0;
 await Promise.all(
   Array.from({ length: 8 }, async () => {
@@ -41,7 +45,9 @@ await Promise.all(
 
 const bad = out.filter((r) => r.verdict !== 'ok');
 for (const r of bad) {
-  console.log(`  ${r.verdict.padEnd(12)} ${String(r.code).padStart(3)}  ${r.source.padEnd(18)} ${r.url.slice(0, 70)}`);
+  console.log(
+    `  ${r.verdict.padEnd(12)} ${String(r.code).padStart(3)}  ${r.source.padEnd(18)} ${r.url.slice(0, 70)}`,
+  );
 }
 console.log(`\n  ${out.length - bad.length}/${out.length} ok, ${bad.length} to look at`);
 closeDb();

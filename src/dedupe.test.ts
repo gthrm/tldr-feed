@@ -5,19 +5,27 @@ import type { Item } from './normalize.ts';
 
 // Real-shaped headlines: the same event as five outlets would word it.
 const SAME_STORY: [string, string][] = [
-  ['Samsung is expected to more than double output of its HBM4 and HBM4E DRAM',
-   'Samsung to double HBM4 and HBM4E DRAM production next year'],
-  ['OpenAI ships GPT-5.6 Turbo with a 2M-token context window',
-   'OpenAI releases GPT-5.6 Turbo, doubling context to 2M tokens'],
-  ['Cloudflare saves another 100TB of RAM with math (and Rust)',
-   'Cloudflare reclaims 100TB of RAM by fixing its consistent hashing | The Register'],
+  [
+    'Samsung is expected to more than double output of its HBM4 and HBM4E DRAM',
+    'Samsung to double HBM4 and HBM4E DRAM production next year',
+  ],
+  [
+    'OpenAI ships GPT-5.6 Turbo with a 2M-token context window',
+    'OpenAI releases GPT-5.6 Turbo, doubling context to 2M tokens',
+  ],
+  [
+    'Cloudflare saves another 100TB of RAM with math (and Rust)',
+    'Cloudflare reclaims 100TB of RAM by fixing its consistent hashing | The Register',
+  ],
 ];
 
 const DIFFERENT_STORY: [string, string][] = [
   ['Qwen Image 2.1', 'Rust 1.95 released with stable async traits'],
   ['Samsung to double HBM4 output', 'Apple announces new MacBook Pro'],
-  ['An undercover Google analyst infiltrated a hacking group',
-   'World model companies are keeping a lot of secrets'],
+  [
+    'An undercover Google analyst infiltrated a hacking group',
+    'World model companies are keeping a lot of secrets',
+  ],
 ];
 
 test('same story across outlets is not reported as different', () => {
@@ -39,9 +47,15 @@ test('identical titles score 1', () => {
 });
 
 const item = (id: string, title: string, weight = 1): Item => ({
-  id, title, weight, source: id, section: 'bigtech',
-  url: `https://example.com/${id}`, domain: 'example.com',
-  publishedAt: new Date('2026-09-20T12:00:00Z'), rawSummary: '',
+  id,
+  title,
+  weight,
+  source: id,
+  section: 'bigtech',
+  url: `https://example.com/${id}`,
+  domain: 'example.com',
+  publishedAt: new Date('2026-09-20T12:00:00Z'),
+  rawSummary: '',
 });
 
 test('five outlets on one story collapse to one cluster', async () => {
@@ -61,9 +75,9 @@ test('five outlets on one story collapse to one cluster', async () => {
 test('the grey band is left to the resolver, and defaults to different', async () => {
   const seen: string[] = [];
   const items = [item('x', 'Anthropic acquires Vercept'), item('y', 'Anthropic buys Vercept team')];
-  const merged = await clusterItems(items, async (a, b) => {
+  const merged = await clusterItems(items, (a, b) => {
     seen.push(`${a.id}/${b.id}`);
-    return true;
+    return Promise.resolve(true);
   });
   const split = await clusterItems(items);
   assert.ok(merged.length <= split.length);
@@ -75,7 +89,8 @@ test('a long digest splits into whole-item messages, never mid-sentence', async 
     title: `Story number ${i} about a thing that happened in the industry today`,
     url: `https://example.com/story-${i}`,
     domain: 'example.com',
-    summary: 'A company did a thing. It involved a specific number, namely 42. Developers may care because it changes a default.',
+    summary:
+      'A company did a thing. It involved a specific number, namely 42. Developers may care because it changes a default.',
     minutes: 2,
     section: 'bigtech',
   }));
@@ -93,11 +108,21 @@ test('cold start is detected on an empty database', async () => {
   const { tmpdir } = await import('node:os');
   const { join } = await import('node:path');
   process.env.DB_PATH = join(tmpdir(), `newsbot-coldstart-${Date.now()}.db`);
-  const { isColdStart, recordNew } = await import(`./db.ts?t=${Date.now()}`);
+  const mod = (await import(`./db.ts?t=${Date.now()}`)) as typeof import('./db.ts');
+  const { isColdStart, recordNew } = mod;
   assert.equal(isColdStart(), true);
-  recordNew([{
-    id: 'x1', source: 's', section: 'bigtech', title: 't', url: 'https://e.com/1',
-    domain: 'e.com', publishedAt: new Date(), rawSummary: '', weight: 1,
-  }]);
+  recordNew([
+    {
+      id: 'x1',
+      source: 's',
+      section: 'bigtech',
+      title: 't',
+      url: 'https://e.com/1',
+      domain: 'e.com',
+      publishedAt: new Date(),
+      rawSummary: '',
+      weight: 1,
+    },
+  ]);
   assert.equal(isColdStart(), false);
 });

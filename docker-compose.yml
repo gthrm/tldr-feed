@@ -1,3 +1,5 @@
+name: tldr-feed
+
 services:
   rsshub:
     image: ghcr.io/diygod/rsshub:latest
@@ -5,26 +7,26 @@ services:
     environment:
       NODE_ENV: production
       CACHE_TYPE: memory
-      CACHE_EXPIRE: "900"
+      CACHE_EXPIRE: '900'
       # The Pi shares 8 GB with grafana/prometheus/pihole — one browser at a time.
-      PUPPETEER_MAX_CONCURRENCY: "1"
-      REQUEST_TIMEOUT: "20000"
-      ALLOW_USER_HOTLINK_TEMPLATE: "false"
+      PUPPETEER_MAX_CONCURRENCY: '1'
+      REQUEST_TIMEOUT: '20000'
+      ALLOW_USER_HOTLINK_TEMPLATE: 'false'
     # Bound to loopback only: newsbot reaches it by service name, not via the LAN.
     ports:
-      - "127.0.0.1:1200:1200"
+      - '127.0.0.1:1200:1200'
     mem_limit: 1g
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:1200/ || exit 1"]
+      test: ['CMD-SHELL', 'curl -fsS -o /dev/null http://localhost:1200/ || exit 1']
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 40s
     logging:
       driver: json-file
-      options: { max-size: "10m", max-file: "3" }
+      options: { max-size: '10m', max-file: '3' }
 
-  newsbot:
+  bot:
     build: .
     restart: unless-stopped
     env_file: .env
@@ -41,4 +43,4 @@ services:
     mem_limit: 1500m
     logging:
       driver: json-file
-      options: { max-size: "10m", max-file: "3" }
+      options: { max-size: '10m', max-file: '3' }

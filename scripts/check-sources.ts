@@ -1,67 +1,91 @@
 // Walks sources.yaml and checks every source with a live request.
 // Doubles as the regression check for when a site breaks its feed.
-import { readFileSync } from 'node:fs';
-import { parse } from 'yaml';
-import { fetchFeed, UA } from '../src/fetch/parse-feed.ts';
+import { fetchFeed } from '../src/fetch/parse-feed.ts';
 import { fetchSitemap } from '../src/fetch/sitemap.ts';
 import { fetchWithBrowser, closeBrowser } from '../src/fetch/browser.ts';
+import { loadSources, type Source } from '../src/fetch/index.ts';
 
-const cfg = parse(readFileSync(new URL('../src/sources.yaml', import.meta.url), 'utf8'));
+type Probe = { count: number; freshest: number | null; sanitized?: boolean };
+type Result = Source & Partial<Probe> & { ok: boolean; ms: number; err?: string };
+
 const rsshubBase = process.env.RSSHUB_BASE_URL ?? 'http://localhost:1200';
-const hours = (d) => (Date.now() - d.getTime()) / 3.6e6;
 
-async function checkFeed(url) {
+const hours = (d: Date): number => (Date.now() - d.getTime()) / 3.6e6;
+
+function freshestOf(dates: (string | undefined)[]): number | null {
+  const parsed = dates.map((d) => new Date(d ?? NaN)).filter((d) => !Number.isNaN(d.getTime()));
+  return parsed.length ? Math.min(...parsed.map(hours)) : null;
+}
+
+async function checkFeed(url: string): Promise<Probe> {
   const feed = await fetchFeed(url);
   const items = feed.items ?? [];
-  const dates = items
-    .map((i) => new Date(i.isoDate ?? i.pubDate ?? NaN))
-    .filter((d) => !Number.isNaN(d.getTime()));
   return {
     count: items.length,
-    freshest: dates.length ? Math.min(...dates.map(hours)) : null,
+    freshest: freshestOf(
+      items.map((i: { isoDate?: string; pubDate?: string }) => i.isoDate ?? i.pubDate),
+    ),
     sanitized: feed.sanitized,
   };
 }
 
-async function checkApi(url) {
-  const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: AbortSignal.timeout(20000) });
+async function checkApi(url: string): Promise<Probe> {
+  const res = await fetch(url, { signal: AbortSignal.timeout(20000) });
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const body = await res.json();
-  // HN Algolia -> {hits}, YC launches -> {hits}, HF daily papers -> []
-  const arr = Array.isArray(body) ? body : (body.hits ?? body.data ?? []);
+  const body: unknown = await res.json();
+  // HN Algolia and YC launches answer {hits}, HF daily papers answers an array.
+  const arr = Array.isArray(body)
+    ? body
+    : ((body as { hits?: unknown[]; data?: unknown[] })?.hits ??
+      (body as { data?: unknown[] })?.data ??
+      []);
   return { count: arr.length, freshest: null };
 }
 
-async function check(src) {
-  const t0 = Date.now();
-  try {
-    let r;
-    if (src.kind === 'feed') r = await checkFeed(src.url);
-    else if (src.kind === 'api') r = await checkApi(src.url);
-    else if (src.kind === 'rsshub') r = await checkFeed(`${rsshubBase}${src.route}`);
-    else if (src.kind === 'browser') {
-      const items = await fetchWithBrowser({
-        url: src.url, itemSelector: src.itemSelector, titleSelector: src.titleSelector,
-        dateSelector: src.dateSelector, limit: src.limit,
+async function probe(src: Source): Promise<Probe> {
+  switch (src.kind) {
+    case 'feed':
+      return checkFeed(src.url!);
+    case 'api':
+      return checkApi(src.url!);
+    case 'rsshub':
+      return checkFeed(`${rsshubBase}${src.route}`);
+    case 'sitemap': {
+      const items = await fetchSitemap({
+        sitemap: src.sitemap!,
+        include: src.include!,
+        limit: src.limit ?? 5,
       });
-      const dates = items.map((i) => new Date(i.isoDate ?? NaN)).filter((d) => !Number.isNaN(d.getTime()));
-      r = { count: items.length, freshest: dates.length ? Math.min(...dates.map(hours)) : null };
+      return { count: items.length, freshest: freshestOf(items.map((i) => i.isoDate)) };
     }
-    else if (src.kind === 'sitemap') {
-      const items = await fetchSitemap({ sitemap: src.sitemap, include: src.include, limit: src.limit ?? 5 });
-      const dates = items.map((i) => new Date(i.isoDate ?? NaN)).filter((d) => !Number.isNaN(d.getTime()));
-      r = { count: items.length, freshest: dates.length ? Math.min(...dates.map(hours)) : null };
+    case 'browser': {
+      const items = await fetchWithBrowser({
+        url: src.url!,
+        itemSelector: src.itemSelector!,
+        titleSelector: src.titleSelector!,
+        dateSelector: src.dateSelector,
+        limit: src.limit,
+      });
+      return { count: items.length, freshest: freshestOf(items.map((i) => i.isoDate)) };
     }
-    else throw new Error(`unknown kind ${src.kind}`);
-    return { ...src, ok: true, ...r, ms: Date.now() - t0 };
-  } catch (err) {
-    return { ...src, ok: false, err: String(err.message ?? err).slice(0, 70), ms: Date.now() - t0 };
+    default:
+      throw new Error(`unknown kind ${String(src.kind)}`);
   }
 }
 
-// bounded concurrency so we do not hammer 50 hosts at once
-async function pool(items, limit, fn) {
-  const out = [];
+async function check(src: Source): Promise<Result> {
+  const t0 = Date.now();
+  try {
+    return { ...src, ok: true, ...(await probe(src)), ms: Date.now() - t0 };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { ...src, ok: false, err: message.slice(0, 70), ms: Date.now() - t0 };
+  }
+}
+
+/** Bounded concurrency, so we do not open a socket to every host at once. */
+async function pool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
   let i = 0;
   await Promise.all(
     Array.from({ length: limit }, async () => {
@@ -71,25 +95,35 @@ async function pool(items, limit, fn) {
   return out;
 }
 
-const results = await pool(cfg.sources, 8, check);
+const { sources } = loadSources();
+const results = await pool(sources, 8, check);
 results.sort((a, b) => Number(a.ok) - Number(b.ok) || a.id.localeCompare(b.id));
 
-let bad = 0;
+await closeBrowser();
+
+let broken = 0;
 let rsshubDown = 0;
+
 for (const r of results) {
   if (r.ok) {
-    const fresh = r.freshest === null ? '   n/a' : `${r.freshest.toFixed(0).padStart(4)}h`;
-    const note = r.sanitized ? '  [xml repaired]' : r.freshest !== null && r.freshest > 720 ? '  [STALE >30d]' : '';
-    console.log(`  OK   ${r.id.padEnd(22)} ${String(r.count).padStart(3)} items  freshest ${fresh}  ${String(r.ms).padStart(5)}ms${note}`);
+    const fresh = r.freshest == null ? '   n/a' : `${r.freshest.toFixed(0).padStart(4)}h`;
+    const note = r.sanitized
+      ? '  [xml repaired]'
+      : r.freshest != null && r.freshest > 720
+        ? '  [STALE >30d]'
+        : '';
+    console.log(
+      `  OK   ${r.id.padEnd(22)} ${String(r.count).padStart(3)} items  freshest ${fresh}  ${String(r.ms).padStart(5)}ms${note}`,
+    );
   } else {
     if (r.kind === 'rsshub') rsshubDown++;
-    else bad++;
+    else broken++;
     console.log(`  FAIL ${r.id.padEnd(22)} ${r.kind.padEnd(7)} ${r.err}`);
   }
 }
 
-await closeBrowser();
-
 const ok = results.filter((r) => r.ok).length;
-console.log(`\n  ${ok}/${results.length} OK, ${bad} broken, ${rsshubDown} waiting on RSSHub (${rsshubBase})`);
-if (bad > 0) process.exitCode = 1;
+console.log(
+  `\n  ${ok}/${results.length} OK, ${broken} broken, ${rsshubDown} waiting on RSSHub (${rsshubBase})`,
+);
+if (broken > 0) process.exitCode = 1;

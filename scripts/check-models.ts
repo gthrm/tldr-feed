@@ -15,10 +15,15 @@ if (!res.ok) {
   process.exit(1);
 }
 
-const ids: string[] = (await res.json()).data.map((m: any) => m.id).sort();
-const chat = ids.filter((id) => /^(gpt|o\d)/.test(id) && !/audio|realtime|image|tts|whisper|embed/.test(id));
+const payload = (await res.json()) as { data: { id: string }[] };
+const ids: string[] = payload.data.map((m) => m.id).sort();
+const chat = ids.filter(
+  (id) => /^(gpt|o\d)/.test(id) && !/audio|realtime|image|tts|whisper|embed/.test(id),
+);
 
-console.log(`configured: ${configured} — ${ids.includes(configured) ? 'available' : 'NOT AVAILABLE on this account'}`);
+console.log(
+  `configured: ${configured} — ${ids.includes(configured) ? 'available' : 'NOT AVAILABLE on this account'}`,
+);
 console.log(`\nchat-capable models on this account (${chat.length}):`);
 for (const id of chat) console.log(`  ${id}${id === configured ? '   <- configured' : ''}`);
 console.log('\nPricing is not in this API. Check https://developers.openai.com/api/docs/pricing');

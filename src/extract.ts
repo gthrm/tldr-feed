@@ -17,7 +17,10 @@ function finish(text: string, url = ''): Article {
     text: clean.slice(0, 12000),
     words,
     minutes: Math.max(1, Math.round(words / WORDS_PER_MINUTE)),
-    hash: createHash('sha1').update(`${url}\u0000${clean.slice(0, 12000)}`).digest('hex').slice(0, 20),
+    hash: createHash('sha1')
+      .update(`${url}\u0000${clean.slice(0, 12000)}`)
+      .digest('hex')
+      .slice(0, 20),
   };
 }
 
@@ -35,14 +38,6 @@ function readable(html: string, url: string): string {
  * `fallbackText` is the feed description: used when the page cannot be read,
  * so a source never disappears from the digest over one unreachable article.
  */
-/**
- * Reddit's own site renders client-side and its .json endpoint answers 403 to
- * unauthenticated clients. old.reddit.com still serves plain HTML.
- */
-function oldReddit(url: string): string {
-  return url.replace(/^https?:\/\/(www\.)?reddit\.com/i, 'https://old.reddit.com');
-}
-
 /** Many pages that defeat Readability still describe themselves honestly. */
 function metaDescription(html: string): string {
   for (const re of [
@@ -53,8 +48,11 @@ function metaDescription(html: string): string {
     const m = html.match(re);
     if (m?.[1] && m[1].trim().length > 40) {
       return m[1]
-        .replace(/&amp;/g, '&').replace(/&quot;/g, '"')
-        .replace(/&#x27;|&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&#x27;|&#39;/g, "'")
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>');
     }
   }
   return '';
@@ -73,7 +71,7 @@ export async function extractArticle(
 
   // A relative or malformed link survives canonicalizeUrl; new URL() throws on
   // it, and outside the try that killed the whole slot before markConsumed ran.
-  let host = '';
+  let host: string;
   try {
     host = new URL(url).hostname.replace(/^www\./, '');
   } catch {
@@ -87,7 +85,7 @@ export async function extractArticle(
       return { ...finish(fallbackText, url), ok: true };
     }
     try {
-      const text = await fetchRedditThread(url);   // only if API keys are set
+      const text = await fetchRedditThread(url); // only if API keys are set
       if (text.length > 200) return { ...finish(text, url), ok: true };
     } catch {
       // unconfigured or rate-limited

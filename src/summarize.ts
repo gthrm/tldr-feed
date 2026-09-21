@@ -33,7 +33,12 @@ Article title: {title}
 Article text:
 {text}`;
 
-async function call(messages: any[], maxTokens = 300): Promise<string> {
+type ChatMessage = { role: 'user' | 'system' | 'assistant'; content: string };
+type ChatResponse = {
+  choices?: { message?: { content?: string }; finish_reason?: string }[];
+};
+
+async function call(messages: ChatMessage[], maxTokens = 300): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error('OPENAI_API_KEY is not set');
 
@@ -45,12 +50,14 @@ async function call(messages: any[], maxTokens = 300): Promise<string> {
       signal: AbortSignal.timeout(120000),
     });
     if (res.ok) {
-      const body: any = await res.json();
+      const body = (await res.json()) as ChatResponse;
       // A truncated completion comes back with no content; treat it as a retry
       // rather than letting a TypeError drop the item.
       const text = body?.choices?.[0]?.message?.content;
       if (typeof text === 'string' && text.trim()) return text.trim();
-      throw new Error(`OpenAI returned no content (finish_reason=${body?.choices?.[0]?.finish_reason})`);
+      throw new Error(
+        `OpenAI returned no content (finish_reason=${body?.choices?.[0]?.finish_reason})`,
+      );
     }
     if (res.status === 429 || res.status >= 500) {
       await new Promise((r) => setTimeout(r, 2 ** attempt * 1500));
@@ -77,12 +84,14 @@ export async function summarize(title: string, article: Article): Promise<string
 /** The grey-band dedup tiebreak from dedupe.ts. One cheap call, yes or no. */
 export async function sameStory(a: string, b: string): Promise<boolean> {
   const answer = await call(
-    [{
-      role: 'user',
-      content:
-        'Do these two headlines report the SAME news event? Answer with one word: YES or NO.\n\n' +
-        `A: ${a}\nB: ${b}`,
-    }],
+    [
+      {
+        role: 'user',
+        content:
+          'Do these two headlines report the SAME news event? Answer with one word: YES or NO.\n\n' +
+          `A: ${a}\nB: ${b}`,
+      },
+    ],
     50,
   );
   return /^yes/i.test(answer.trim());
@@ -101,10 +110,10 @@ export type Classification = {
  */
 export async function classify(title: string, domain: string): Promise<Classification> {
   const answer = await call(
-    [{
-      role: 'user',
-      content:
-`Classify this headline for a tech/software/AI news digest.
+    [
+      {
+        role: 'user',
+        content: `Classify this headline for a tech/software/AI news digest.
 
 Headline: ${title}
 Source: ${domain}
@@ -146,8 +155,9 @@ Answer with exactly three comma-separated values, nothing else:
    self-promotion, "save $X", "last chance", job ads.
 
 Example answer: RELEVANT, BIGTECH, NEWS`,
-    }],
-    200,   // a tight cap truncates the answer and the whole call fails
+      },
+    ],
+    200, // a tight cap truncates the answer and the whole call fails
   );
 
   // The answer may arrive with stray words around it; match rather than split blindly.
@@ -157,9 +167,14 @@ Example answer: RELEVANT, BIGTECH, NEWS`,
   const rel = /\bSKIP\b/.test(up) ? 'SKIP' : 'RELEVANT';
   const sec = (up.match(/\b(BIGTECH|SCIENCE|PROGRAMMING|YC)\b/) ?? [])[1] ?? 'BIGTECH';
   const kind = /\bPROMO\b/.test(up) ? 'PROMO' : 'NEWS';
-  const section = (
-    { BIGTECH: 'bigtech', SCIENCE: 'science', PROGRAMMING: 'programming', YC: 'yc' } as const
-  )[sec as 'BIGTECH'] ?? 'bigtech';
+  const section =
+    ({ BIGTECH: 'bigtech', SCIENCE: 'science', PROGRAMMING: 'programming', YC: 'yc' } as const)[
+      sec as 'BIGTECH'
+    ] ?? 'bigtech';
 
-  return { relevant: rel?.startsWith('RELEVANT') ?? false, section, promo: kind?.startsWith('PROMO') ?? false };
+  return {
+    relevant: rel?.startsWith('RELEVANT') ?? false,
+    section,
+    promo: kind?.startsWith('PROMO') ?? false,
+  };
 }

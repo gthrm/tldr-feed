@@ -25,13 +25,20 @@ export function escapeHtml(s: string): string {
 
 export function header(now = new Date(), tz = 'Europe/Belgrade'): string {
   const d = new Intl.DateTimeFormat('en-GB', {
-    timeZone: tz, day: 'numeric', month: 'short',
+    timeZone: tz,
+    day: 'numeric',
+    month: 'short',
   }).format(now);
   const t = new Intl.DateTimeFormat('en-GB', {
-    timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: tz,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
   }).format(now);
-  const abbr = new Intl.DateTimeFormat('en-GB', { timeZone: tz, timeZoneName: 'short' })
-    .formatToParts(now).find((p) => p.type === 'timeZoneName')?.value ?? 'CET';
+  const abbr =
+    new Intl.DateTimeFormat('en-GB', { timeZone: tz, timeZoneName: 'short' })
+      .formatToParts(now)
+      .find((p) => p.type === 'timeZoneName')?.value ?? 'CET';
   return `🗞 <b>TLDR · ${d}, ${t} ${abbr}</b>`;
 }
 
@@ -67,9 +74,7 @@ export function formatDigest(entries: Entry[], now = new Date(), tz = 'Europe/Be
     const candidate = `${current}\n\n${block.text}`;
     const next = blocks[i + 1];
     const headerWouldBeOrphaned =
-      block.isHeader &&
-      next &&
-      `${candidate}\n\n${next.text}`.length > TELEGRAM_LIMIT;
+      block.isHeader && next && `${candidate}\n\n${next.text}`.length > TELEGRAM_LIMIT;
 
     if (candidate.length <= TELEGRAM_LIMIT && !headerWouldBeOrphaned) {
       current = candidate;

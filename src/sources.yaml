@@ -9,121 +9,120 @@ defaults:
   max_age_hours: 36
 
 sources:
-
   # ---------- aggregators: engagement signal, not the article itself ----------
   - id: hn
     kind: api
-    url: "https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=50"
+    url: 'https://hn.algolia.com/api/v1/search?tags=front_page&hitsPerPage=50'
     weight: 1.4
     section: programming
-    min_points: 100          # below this it is noise
+    min_points: 100 # below this it is noise
   - id: lobsters
     kind: feed
-    url: "https://lobste.rs/rss"
+    url: 'https://lobste.rs/rss'
     weight: 1.1
     section: programming
 
   # ---------- AI labs: primary sources, highest trust ----------
   - id: openai-news
     kind: feed
-    url: "https://openai.com/news/rss.xml"
+    url: 'https://openai.com/news/rss.xml'
     weight: 1.6
     section: bigtech
   - id: anthropic-news
     kind: rsshub
-    route: "/anthropic/news"
+    route: '/anthropic/news'
     weight: 1.6
     section: bigtech
   - id: anthropic-engineering
     kind: rsshub
-    route: "/anthropic/engineering"
+    route: '/anthropic/engineering'
     weight: 1.4
     section: programming
   - id: deepmind
     kind: feed
-    url: "https://deepmind.google/blog/rss.xml"
+    url: 'https://deepmind.google/blog/rss.xml'
     weight: 1.5
     section: science
   - id: google-ai
     kind: feed
-    url: "https://blog.google/technology/ai/rss/"
+    url: 'https://blog.google/technology/ai/rss/'
     weight: 1.3
     section: bigtech
   - id: qwen
     kind: rsshub
-    route: "/qwen/blog/en-US" # qwen.ai has no feed; ?id=rss returns HTML. en-US or titles come back Chinese.
+    route: '/qwen/blog/en-US' # qwen.ai has no feed; ?id=rss returns HTML. en-US or titles come back Chinese.
     weight: 1.4
     section: science
   - id: mistral
-    kind: sitemap                 # no feed, but sitemap + og: tags, no JS needed
-    sitemap: "https://mistral.ai/sitemap-0.xml"
-    include: "/news/"
+    kind: sitemap # no feed, but sitemap + og: tags, no JS needed
+    sitemap: 'https://mistral.ai/sitemap-0.xml'
+    include: '/news/'
     limit: 12
     weight: 1.3
     section: science
   - id: huggingface-blog
     kind: feed
-    url: "https://huggingface.co/blog/feed.xml"
+    url: 'https://huggingface.co/blog/feed.xml'
     weight: 1.2
     section: science
   - id: hf-daily-papers
     kind: api
-    url: "https://huggingface.co/api/daily_papers"
+    url: 'https://huggingface.co/api/daily_papers'
     weight: 1.0
     section: science
   - id: arxiv-ai
     kind: feed
-    url: "https://export.arxiv.org/rss/cs.AI"
-    weight: 0.8              # volume is huge, individual papers rarely digest-worthy
+    url: 'https://export.arxiv.org/rss/cs.AI'
+    weight: 0.8 # volume is huge, individual papers rarely digest-worthy
     section: science
 
   # ---------- tech press ----------
   - id: arstechnica
     kind: feed
-    url: "https://feeds.arstechnica.com/arstechnica/index"
+    url: 'https://feeds.arstechnica.com/arstechnica/index'
     weight: 1.3
     section: bigtech
   - id: techcrunch
     kind: feed
-    url: "https://techcrunch.com/feed/"
+    url: 'https://techcrunch.com/feed/'
     weight: 1.1
     section: bigtech
   - id: theverge
     kind: feed
-    url: "https://www.theverge.com/rss/index.xml"
+    url: 'https://www.theverge.com/rss/index.xml'
     weight: 1.1
     section: bigtech
   - id: wired
     kind: feed
-    url: "https://www.wired.com/feed/rss"
+    url: 'https://www.wired.com/feed/rss'
     weight: 1.0
     section: bigtech
   - id: 404media
     kind: feed
-    url: "https://www.404media.co/rss/"
+    url: 'https://www.404media.co/rss/'
     weight: 1.1
     section: bigtech
   - id: technologyreview
     kind: feed
-    url: "https://www.technologyreview.com/feed/"
+    url: 'https://www.technologyreview.com/feed/'
     weight: 1.1
     section: science
   - id: theregister
     kind: feed
-    url: "https://www.theregister.com/headlines.atom"
-    weight: 0.8              # high volume
+    url: 'https://www.theregister.com/headlines.atom'
+    weight: 0.8 # high volume
     section: bigtech
   - id: engadget
     kind: feed
-    url: "https://www.engadget.com/rss.xml"
+    url: 'https://www.engadget.com/rss.xml'
     weight: 0.8
     section: bigtech
   - id: venturebeat
-    kind: browser                 # 429 to every HTTP client, 200 to Chromium
-    url: "https://venturebeat.com/category/ai/"
-    itemSelector: "article"
-    titleSelector: "h2 a"
-    dateSelector: "time"
+    kind: browser # 429 to every HTTP client, 200 to Chromium
+    url: 'https://venturebeat.com/category/ai/'
+    itemSelector: 'article'
+    titleSelector: 'h2 a'
+    dateSelector: 'time'
     limit: 15
     weight: 0.9
     section: bigtech
@@ -131,140 +130,140 @@ sources:
   # ---------- security ----------
   - id: krebs
     kind: feed
-    url: "https://krebsonsecurity.com/feed/"
+    url: 'https://krebsonsecurity.com/feed/'
     weight: 1.3
     section: programming
   - id: bleepingcomputer
     kind: feed
-    url: "https://www.bleepingcomputer.com/feed/"
+    url: 'https://www.bleepingcomputer.com/feed/'
     weight: 1.0
     section: programming
 
   # ---------- engineering blogs & changelogs ----------
   - id: cloudflare
     kind: feed
-    url: "https://blog.cloudflare.com/rss/"
+    url: 'https://blog.cloudflare.com/rss/'
     weight: 1.3
     section: programming
   - id: github-blog
     kind: feed
-    url: "https://github.blog/feed/"
+    url: 'https://github.blog/feed/'
     weight: 1.1
     section: programming
   - id: github-changelog
     kind: feed
-    url: "https://github.blog/changelog/feed/"
+    url: 'https://github.blog/changelog/feed/'
     weight: 0.9
     section: programming
   - id: stackoverflow-blog
     kind: feed
-    url: "https://stackoverflow.blog/feed/"
+    url: 'https://stackoverflow.blog/feed/'
     weight: 0.9
     section: programming
   - id: infoq
     kind: feed
-    url: "https://feed.infoq.com/"
+    url: 'https://feed.infoq.com/'
     weight: 0.9
     section: programming
   - id: thenewstack
     kind: feed
-    url: "https://thenewstack.io/feed/"
+    url: 'https://thenewstack.io/feed/'
     weight: 0.9
     section: programming
   - id: rust-blog
     kind: feed
-    url: "https://blog.rust-lang.org/feed.xml"
+    url: 'https://blog.rust-lang.org/feed.xml'
     weight: 1.2
     section: programming
   - id: go-blog
     kind: feed
-    url: "https://go.dev/blog/feed.atom"
+    url: 'https://go.dev/blog/feed.atom'
     weight: 1.2
     section: programming
   - id: vercel
     kind: feed
-    url: "https://vercel.com/atom"
+    url: 'https://vercel.com/atom'
     weight: 0.9
     section: programming
   - id: cursor
     kind: feed
-    url: "https://cursor.com/changelog/rss.xml"
+    url: 'https://cursor.com/changelog/rss.xml'
     weight: 1.1
     section: programming
   - id: apple-developer
     kind: feed
-    url: "https://developer.apple.com/news/rss/news.rss"
+    url: 'https://developer.apple.com/news/rss/news.rss'
     weight: 1.0
     section: programming
   - id: android-developers
     kind: feed
-    url: "https://android-developers.googleblog.com/feeds/posts/default"
+    url: 'https://android-developers.googleblog.com/feeds/posts/default'
     weight: 1.0
     section: programming
   - id: aws-whats-new
     kind: feed
-    url: "https://aws.amazon.com/about-aws/whats-new/recent/feed/"
-    weight: 0.5              # 20+ product minutiae a day; must earn its slot
+    url: 'https://aws.amazon.com/about-aws/whats-new/recent/feed/'
+    weight: 0.5 # 20+ product minutiae a day; must earn its slot
     section: programming
   - id: nvidia
     kind: feed
-    url: "https://blogs.nvidia.com/feed/"
+    url: 'https://blogs.nvidia.com/feed/'
     weight: 0.8
     section: science
   - id: apple-ml
     kind: feed
-    url: "https://machinelearning.apple.com/rss.xml"
+    url: 'https://machinelearning.apple.com/rss.xml'
     weight: 1.2
     section: science
   - id: microsoft-research
     kind: feed
-    url: "https://www.microsoft.com/en-us/research/feed/"
+    url: 'https://www.microsoft.com/en-us/research/feed/'
     weight: 1.0
     section: science
 
   # ---------- individual voices: low volume, high signal ----------
   - id: simonwillison
     kind: feed
-    url: "https://simonwillison.net/atom/everything/"
+    url: 'https://simonwillison.net/atom/everything/'
     weight: 1.3
     section: programming
   - id: smol-ai
     kind: feed
-    url: "https://news.smol.ai/rss.xml"
+    url: 'https://news.smol.ai/rss.xml'
     weight: 1.0
     section: science
   - id: latent-space
     kind: feed
-    url: "https://www.latent.space/feed"
+    url: 'https://www.latent.space/feed'
     weight: 1.1
     section: science
   - id: pragmatic-engineer
     kind: feed
-    url: "https://newsletter.pragmaticengineer.com/feed"
+    url: 'https://newsletter.pragmaticengineer.com/feed'
     weight: 1.2
     section: programming
 
   # ---------- Y Combinator ----------
   - id: yc-blog
     kind: feed
-    url: "https://www.ycombinator.com/blog/rss"
+    url: 'https://www.ycombinator.com/blog/rss'
     weight: 1.2
     section: yc
   - id: yc-launches
     kind: api
-    url: "https://www.ycombinator.com/launches"
+    url: 'https://www.ycombinator.com/launches'
     weight: 1.0
     section: yc
   - id: producthunt
     kind: feed
-    url: "https://www.producthunt.com/feed"
+    url: 'https://www.producthunt.com/feed'
     weight: 0.7
     section: yc
 
   # ---------- reddit ----------
   - id: r-localllama
     kind: feed
-    url: "https://www.reddit.com/r/LocalLLaMA/.rss"
+    url: 'https://www.reddit.com/r/LocalLLaMA/.rss'
     weight: 0.9
     section: science
 

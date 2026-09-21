@@ -1,4 +1,4 @@
-# newsbot
+# tldr-feed
 
 A TLDR-style tech news digest for Telegram. Polls ~47 tech / developer / AI
 sources, drops duplicates and off-topic items, summarises what is left with
@@ -16,13 +16,13 @@ sources.yaml ──> fetch ──> normalize ──> dedupe ──> rank
 
 Four kinds of source, because not every site has a feed:
 
-| kind | used for | how |
-|---|---|---|
-| `feed` | most sources | RSS/Atom, conditional GET via ETag |
-| `api` | Hacker News, HF papers, YC launches | JSON endpoints |
-| `rsshub` | Anthropic, Qwen | self-hosted RSSHub turns them into feeds |
-| `sitemap` | Mistral | sitemap + Open Graph tags, no browser needed |
-| `browser` | VentureBeat | answers 429 to every HTTP client, 200 to Chromium |
+| kind      | used for                            | how                                               |
+| --------- | ----------------------------------- | ------------------------------------------------- |
+| `feed`    | most sources                        | RSS/Atom, conditional GET via ETag                |
+| `api`     | Hacker News, HF papers, YC launches | JSON endpoints                                    |
+| `rsshub`  | Anthropic, Qwen                     | self-hosted RSSHub turns them into feeds          |
+| `sitemap` | Mistral                             | sitemap + Open Graph tags, no browser needed      |
+| `browser` | VentureBeat                         | answers 429 to every HTTP client, 200 to Chromium |
 
 ### Duplicate protection
 
@@ -64,22 +64,22 @@ DRY_RUN=1 npm start -- --slot   # full pipeline, prints instead of posting
 docker compose up -d --build
 ```
 
-Two services: `rsshub` (stock upstream image) and `newsbot`. RSSHub is bound to
+Two services: `rsshub` (stock upstream image) and `bot`. RSSHub is bound to
 loopback and reached by service name; nothing is published to the network.
 SQLite lives in `./data`, so it survives rebuilds.
 
 ## Configuration
 
-| variable | default | meaning |
-|---|---|---|
-| `OPENAI_API_KEY` | — | required |
-| `OPENAI_MODEL` | `gpt-5.6-terra` | chosen by a bake-off against `gpt-5.6-luna` |
-| `TELEGRAM_BOT_TOKEN` | — | required; the bot must be a channel admin |
-| `TELEGRAM_CHANNEL_ID` | — | `@channelname` or a numeric id |
-| `RSSHUB_BASE_URL` | `http://localhost:1200` | `http://rsshub:1200` under compose |
-| `DRY_RUN` | `0` | `1` prints instead of posting |
-| `MIN_ITEMS` | `1` | fewer new items than this and the slot stays silent |
-| `PIPELINE_CONCURRENCY` | `6` | items processed in parallel |
+| variable               | default                 | meaning                                             |
+| ---------------------- | ----------------------- | --------------------------------------------------- |
+| `OPENAI_API_KEY`       | —                       | required                                            |
+| `OPENAI_MODEL`         | `gpt-5.6-terra`         | chosen by a bake-off against `gpt-5.6-luna`         |
+| `TELEGRAM_BOT_TOKEN`   | —                       | required; the bot must be a channel admin           |
+| `TELEGRAM_CHANNEL_ID`  | —                       | `@channelname` or a numeric id                      |
+| `RSSHUB_BASE_URL`      | `http://localhost:1200` | `http://rsshub:1200` under compose                  |
+| `DRY_RUN`              | `0`                     | `1` prints instead of posting                       |
+| `MIN_ITEMS`            | `1`                     | fewer new items than this and the slot stays silent |
+| `PIPELINE_CONCURRENCY` | `6`                     | items processed in parallel                         |
 
 Every new item is posted. Telegram caps a message at 4096 characters, so a busy
 slot becomes several messages, split between items and never inside one.
