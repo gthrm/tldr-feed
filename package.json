@@ -1,0 +1,25 @@
+{
+  "name": "newsbot",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "start": "node src/index.ts",
+    "check-sources": "node scripts/check-sources.ts",
+    "check-links": "node scripts/check-links.ts",
+    "check-models": "node scripts/check-models.ts",
+    "test": "node --test src/*.test.ts"
+  },
+  "dependencies": {
+    "@mozilla/readability": "^0.5.0",
+    "better-sqlite3": "^11.7.0",
+    "jsdom": "^25.0.1",
+    "node-cron": "^3.0.3",
+    "playwright": "^1.63.0",
+    "rss-parser": "^3.13.0",
+    "yaml": "^2.6.1"
+  }
+}

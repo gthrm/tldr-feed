@@ -1,0 +1,44 @@
+services:
+  rsshub:
+    image: ghcr.io/diygod/rsshub:latest
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: memory
+      CACHE_EXPIRE: "900"
+      # The Pi shares 8 GB with grafana/prometheus/pihole — one browser at a time.
+      PUPPETEER_MAX_CONCURRENCY: "1"
+      REQUEST_TIMEOUT: "20000"
+      ALLOW_USER_HOTLINK_TEMPLATE: "false"
+    # Bound to loopback only: newsbot reaches it by service name, not via the LAN.
+    ports:
+      - "127.0.0.1:1200:1200"
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS -o /dev/null http://localhost:1200/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 40s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  newsbot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      RSSHUB_BASE_URL: http://rsshub:1200
+      TZ: Europe/Belgrade
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      rsshub:
+        condition: service_healthy
+    # Chromium for the one browser-backed source needs headroom; 512m gets the
+    # container OOM-killed mid-poll (exit 137).
+    mem_limit: 1500m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
