@@ -87,6 +87,15 @@ export class SiteService {
     this.write('index.json', days);
     return days;
   }
+  /** A day as it was written for the site — no database, no pipeline. */
+  readDay(day: string): SiteDay | null {
+    try {
+      return JSON.parse(readFileSync(join(this.root, 'days', `${day}.json`), 'utf8')) as SiteDay;
+    } catch {
+      return null;
+    }
+  }
+
   /**
    * Rebuilds the static site from the JSON on disk. Only the days that exist are
    * prerendered, and the previous output is kept, so an archive of a thousand
