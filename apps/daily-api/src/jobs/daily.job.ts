@@ -63,7 +63,7 @@ export class DailyJob {
 
     const entries = await this.pipeline.run(day, { limit: opts.limit });
     if (!entries.length) {
-      this.log.log('nothing survived — no page, no email, and nothing written');
+      this.log.warn('nothing survived — no page, no email, and nothing written');
       return [];
     }
 
@@ -117,6 +117,8 @@ export class DailyJob {
     }
 
     this.db.logStats(`evening run ${day}`);
+    // The line the "Daily Digest Missing" alert in Grafana waits for.
+    this.log.log(`evening run ${day} done: ${entries.length} entries`);
     return entries;
   }
 }

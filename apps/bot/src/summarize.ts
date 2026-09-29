@@ -42,6 +42,7 @@ async function call(messages: ChatMessage[], maxTokens = 300): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error('OPENAI_API_KEY is not set');
 
+  let last = '';
   for (let attempt = 0; attempt < 3; attempt++) {
     const res = await fetch(API, {
       method: 'POST',
@@ -59,13 +60,15 @@ async function call(messages: ChatMessage[], maxTokens = 300): Promise<string> {
         `OpenAI returned no content (finish_reason=${body?.choices?.[0]?.finish_reason})`,
       );
     }
-    if (res.status === 429 || res.status >= 500) {
-      await new Promise((r) => setTimeout(r, 2 ** attempt * 1500));
-      continue;
-    }
-    throw new Error(`OpenAI ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    // The status and the body go into every error: a bare "retries exhausted"
+    // hid an empty credit balance for a whole day.
+    last = `OpenAI ${res.status}: ${(await res.text()).replace(/\s+/g, ' ').slice(0, 300)}`;
+    // An empty balance is a 429 too, but waiting does not refill it.
+    const retriable = (res.status === 429 && !/insufficient_quota/.test(last)) || res.status >= 500;
+    if (!retriable) throw new Error(last);
+    await new Promise((r) => setTimeout(r, 2 ** attempt * 1500));
   }
-  throw new Error('OpenAI: retries exhausted');
+  throw new Error(`OpenAI: retries exhausted (${last})`);
 }
 
 export async function summarize(title: string, article: Article): Promise<string | null> {

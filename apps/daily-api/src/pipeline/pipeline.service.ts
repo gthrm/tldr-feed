@@ -105,10 +105,13 @@ export class PipelineService {
     let next = 0;
 
     let found = 0;
+    // A dead key fails every call the same way. Carrying on would turn it into
+    // an empty day that looks like a quiet one, so the first such error ends the run.
+    let fatal: unknown = null;
 
     await Promise.all(
       Array.from({ length: concurrency }, async () => {
-        while (next < candidates.length && found < target) {
+        while (next < candidates.length && found < target && !fatal) {
           const idx = next++;
           const head = candidates[idx].items[0];
 
@@ -120,6 +123,10 @@ export class PipelineService {
           try {
             verdict = await classify(head.title, head.domain);
           } catch (err) {
+            if (isFatal(err)) {
+              fatal ??= err;
+              break;
+            }
             this.log.warn(`classify failed for ${head.url}: ${String(err)}`);
             continue;
           }
@@ -132,6 +139,10 @@ export class PipelineService {
           try {
             summary = await summarize(head.title, article);
           } catch (err) {
+            if (isFatal(err)) {
+              fatal ??= err;
+              break;
+            }
             this.log.warn(`summarize failed for ${head.url}: ${String(err)}`);
             continue;
           }
@@ -154,6 +165,7 @@ export class PipelineService {
         }
       }),
     );
+    if (fatal) throw fatal;
 
     // Rank order is preserved: the array is filled by index, not by finish time.
     const entries = slots.filter((e): e is DayEntry => e !== null).slice(0, target);
@@ -170,6 +182,11 @@ export class PipelineService {
     const clusters = await clusterItems(items, async () => false);
     return rankClusters(clusters, now).map((c) => c.items[0]);
   }
+}
+
+/** No credits, a bad or revoked key: every later call would fail the same way. */
+function isFatal(err: unknown): boolean {
+  return /insufficient_quota|OpenAI 40[13]\b|OPENAI_API_KEY is not set/.test(String(err));
 }
 
 export { compare };
