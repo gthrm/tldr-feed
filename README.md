@@ -1,95 +1,87 @@
-# tldr-feed
+# tldr
 
-A TLDR-style tech news digest for Telegram. Polls ~47 tech / developer / AI
-sources, drops duplicates and off-topic items, summarises what is left with
-OpenAI, and posts to a channel ten times a day between 09:00 and 21:00 CET.
+Two products over one list of sources.
 
-## How it works
+| | what it is | where it runs |
+| --- | --- | --- |
+| [`apps/bot`](apps/bot) | the Telegram channel: ten slots a day, 09:00–21:00 CET, only when there is something new | its own container, its own SQLite |
+| [`apps/daily-api`](apps/daily-api) | the daily digest: one evening run that builds a page and sends one email | its own container, Neon Postgres |
+| [`apps/daily-web`](apps/daily-web) | the site at `tldr.cdroma.me`: a static page per day | files, served by Caddy |
+| [`packages/sources`](packages/sources) | `sources.yaml` — the one thing both read | a file |
+
+The bot posts often and posts everything. The daily is a different product with a
+different rhythm: one run in the evening, the twenty best stories of the day, one
+page, one email. **They share the source list and
+nothing else** — no shared code, no shared database, no calls between them. Add
+or drop a source in `packages/sources/sources.yaml` and both pick it up.
+
+## The evening run
+
+At 21:10 Europe/Belgrade, after the day's last news has landed:
 
 ```
-sources.yaml ──> fetch ──> normalize ──> dedupe ──> rank
-                                                      │
-                            classify (relevant? section? promo?)
-                                                      │
-                              extract ──> summarize ──> format ──> Telegram
+fetch (same sources) → dedupe → rank → classify → extract → summarize
+   │
+   ├─ 1. the day is written to Neon          ─┐
+   ├─ 2. the static site is rebuilt           │  one window: the database wakes,
+   ├─ 3. the email goes out via Resend        │  four statements run, it sleeps
+   └─ 4. the page is served by Caddy         ─┘  until tomorrow evening
 ```
 
-Four kinds of source, because not every site has a feed:
-
-| kind      | used for                            | how                                               |
-| --------- | ----------------------------------- | ------------------------------------------------- |
-| `feed`    | most sources                        | RSS/Atom, conditional GET via ETag                |
-| `api`     | Hacker News, HF papers, YC launches | JSON endpoints                                    |
-| `rsshub`  | Anthropic, Qwen                     | self-hosted RSSHub turns them into feeds          |
-| `sitemap` | Mistral                             | sitemap + Open Graph tags, no browser needed      |
-| `browser` | VentureBeat                         | answers 429 to every HTTP client, 200 to Chromium |
-
-### Duplicate protection
-
-One announcement reaches us from five outlets within minutes. Four stages:
-
-1. **Same URL** — canonicalised (tracking params stripped, redirects resolved,
-   `amp/` and `www.` normalised), then a unique index in SQLite.
-2. **Same story, different URLs** — trigram similarity of the normalised title
-   combined with overlap of entity tokens (`Samsung`, `HBM4`, `Qwen Image 2.1`).
-   Above 0.55 the items join a cluster, below 0.40 they stay apart.
-3. **Grey band 0.40–0.55** — one cheap model call: "same event, yes or no".
-4. **Across slots** — cluster keys are remembered for 7 days, plus a
-   title-similarity check against the last 200 posted items.
-
-### Relevance gate
-
-Hacker News carries whales, libraries and machinist tools; press feeds carry
-conference ticket ads. Every candidate gets one headline-only classification
-call before extraction: relevant or not, which section, promo or news. The
-section comes from the article, never from the source.
+Nothing reads the database to serve a page. Neon's free plan suspends a compute
+after five minutes of inactivity and bills by the hour it is awake, so what costs
+money is the number of wake-ups, not the number of rows. One a day fits inside
+100 CU-hours with room to spare — and `apps/daily-api/src/jobs/daily.job.spec.ts`
+asserts the count, because a budget nobody measures is a budget nobody keeps.
 
 ## Running it
 
 ```bash
-cp .env.example .env     # then fill in the three secrets
-npm install
-npx playwright install chromium
+npm install                  # one install for the whole monorepo
 
-npm run check-sources    # every source, live, with item counts and latency
-npm test                 # dedup, URL canonicalisation, message splitting
-DRY_RUN=1 npm start -- --slot   # full pipeline, prints instead of posting
+npm run seed                 # two days of invented entries, so there is something to see
+npm run site                 # the site at http://localhost:5173
+
+npm run job -- --preview                      # what today holds, headlines only, free
+npm run job -- --dry-run --skip-build         # the full run: writes nothing, sends nothing
+npm run job -- --day 2026-09-28               # the real thing
+
+npm run check                # bot and daily: typecheck, lint, tests
 ```
 
-`DRY_RUN=1` prints the digest to the console. Remove it to post for real.
+`MAIL_DRY_RUN=1` prints the email instead of sending it. Keep it on until the
+first live test.
 
-### Deployment
+## Deployment
+
+One compose stack on the Raspberry Pi: `rsshub`, `bot`, `daily-api`, `caddy`.
+
+When upgrading from the single-app layout, stop the bot and move its existing
+`data/` directory to `apps/bot/data/` before recreating the container. This keeps
+the SQLite history and queue; an empty directory would lose deduplication state.
 
 ```bash
 docker compose up -d --build
 ```
 
-Two services: `rsshub` (stock upstream image) and `bot`. RSSHub is bound to
-loopback and reached by service name; nothing is published to the network.
-SQLite lives in `./data`, so it survives rebuilds.
+Caddy listens on `127.0.0.1:3091` and serves last night's build; `/api/*` is the
+only path that reaches the application. The way in from outside is the Cloudflare
+tunnel already running on the Pi:
 
-## Configuration
+```yaml
+# ~/.cloudflared/config.yml, before the http_status:404 rule
+  - hostname: tldr.cdroma.me
+    service: http://localhost:3091
+```
 
-| variable               | default                 | meaning                                             |
-| ---------------------- | ----------------------- | --------------------------------------------------- |
-| `OPENAI_API_KEY`       | —                       | required                                            |
-| `OPENAI_MODEL`         | `gpt-5.6-terra`         | chosen by a bake-off against `gpt-5.6-luna`         |
-| `TELEGRAM_BOT_TOKEN`   | —                       | required; the bot must be a channel admin           |
-| `TELEGRAM_CHANNEL_ID`  | —                       | `@channelname` or a numeric id                      |
-| `RSSHUB_BASE_URL`      | `http://localhost:1200` | `http://rsshub:1200` under compose                  |
-| `DRY_RUN`              | `0`                     | `1` prints instead of posting                       |
-| `MIN_ITEMS`            | `1`                     | fewer new items than this and the slot stays silent |
-| `PIPELINE_CONCURRENCY` | `6`                     | items processed in parallel                         |
+then `cloudflared tunnel route dns <tunnel> tldr.cdroma.me` and restart the
+service. TLS terminates at Cloudflare.
 
-Every new item is posted. Telegram caps a message at 4096 characters, so a busy
-slot becomes several messages, split between items and never inside one.
+Secrets live in `.env` beside the compose file — see `.env.example`. Database
+migrations: `npm run -w @tldr/daily-api db:migrate`.
 
-## Adding a source
+## What is where
 
-Add an entry to `src/sources.yaml`, then run `npm run check-sources`. If a site
-has no feed, try its sitemap first (`kind: sitemap`), then RSSHub
-(`kind: rsshub`), and only reach for `kind: browser` when the site refuses
-plain HTTP clients outright.
-
-Sources deliberately excluded, with reasons, are listed at the bottom of
-`sources.yaml`.
+- `apps/bot/README.md` — the bot in detail: sources, four-stage dedup, the
+  relevance gate, its configuration.
+- `packages/sources/README.md` — the shared list and how each app finds it.

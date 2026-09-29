@@ -1,0 +1,349 @@
+/* Self-hosted, latin subset, 42 KB in total: three files from this origin
+   instead of three round trips to a font CDN, and no flash of unstyled text. */
+@font-face {
+	font-family: 'Lato';
+	font-style: normal;
+	font-weight: 400;
+	font-display: swap;
+	src: url('/fonts/lato-400.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'Lato';
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url('/fonts/lato-700.woff2') format('woff2');
+}
+@font-face {
+	font-family: 'Roboto Slab';
+	font-style: normal;
+	font-weight: 700;
+	font-display: swap;
+	src: url('/fonts/roboto-slab-700.woff2') format('woff2');
+}
+
+/*
+ * The blog's design, token for token: cdroma.me. Orange accent, Lato body,
+ * Roboto Slab headings, dark mode as a class on <body> with no media query,
+ * because the reader's choice is remembered rather than guessed every visit.
+ */
+body {
+	--bg: #fff;
+	--tbg: #ccc;
+	--tc: #fff;
+	--textNormal: #222;
+	--textButton: #f2f2f3;
+	--textTitle: #222;
+	--textLink: rgb(255, 87, 0);
+	--disabledLink: rgb(148, 148, 148);
+	--textLinkHover: rgba(255, 87, 0, 0.8);
+	--hr: hsla(0, 0%, 0%, 0.2);
+	--codeBg: #1b1b1b;
+	--codeText: #f5d67b;
+	--meta: #bbb;
+
+	min-width: 320px;
+	margin: 0;
+	background-color: var(--bg);
+	color: var(--textNormal);
+	transition-duration: 0.2s;
+	transition-property: background-color, color;
+	font-family: 'Lato', sans-serif;
+	font-weight: 400;
+	font-style: normal;
+}
+
+body.dark {
+	-webkit-font-smoothing: antialiased;
+	--bg: #2d2d2d;
+	--tbg: #66bc6a;
+	--tc: #ccc;
+	--textNormal: #f2f2f3;
+	--textButton: #f2f2f3;
+	--textTitle: #e7e8eb;
+	--textLink: rgb(244, 126, 37);
+	--textLinkHover: rgba(244, 126, 37, 0.8);
+	--hr: hsla(0, 0%, 100%, 0.2);
+	--meta: #8b8b8b;
+}
+
+html {
+	font: 118.75%/1.58 'Lato', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+	box-sizing: border-box;
+	overflow-y: scroll;
+}
+*,
+*::before,
+*::after {
+	box-sizing: inherit;
+}
+
+h1,
+h2,
+h3,
+h4 {
+	font-family: 'Roboto Slab', sans-serif;
+	font-weight: 700;
+	line-height: 1.1;
+	color: var(--textNormal);
+	margin: 0 0 1.58rem;
+}
+h1 {
+	font-size: 2rem;
+}
+h2 {
+	font-size: 1.51572rem;
+}
+h3 {
+	font-size: 1.31951rem;
+}
+h4 {
+	font-size: 1rem;
+}
+p {
+	margin: 0 0 1.58rem;
+}
+a {
+	color: var(--textLink);
+	text-decoration: none;
+}
+/* The blog's rule: a heading inside a link takes the link colour. */
+a h3 {
+	color: var(--textLink);
+	transition: all ease-in-out 0.2s;
+}
+a:active h3,
+a:hover h3 {
+	color: var(--textLinkHover);
+}
+hr {
+	background: var(--hr);
+	border: none;
+	height: 1px;
+	margin: 0 0 calc(1.58rem - 1px);
+}
+
+.container {
+	margin: 0 auto;
+	max-width: 700px;
+	padding: 3.16rem;
+	padding-top: 2.37rem;
+}
+
+.masthead {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1.58rem;
+	margin-bottom: 3.16rem;
+}
+.masthead h3 {
+	display: inline-block;
+	margin: 0;
+}
+.masthead nav {
+	font-size: 0.85rem;
+}
+.masthead nav a {
+	margin-left: 0.79rem;
+}
+
+/* The toggle from the blog: a 50x24 pill with the thumb sliding across. */
+.toggle {
+	position: relative;
+	width: 50px;
+	height: 24px;
+	flex: none;
+	padding: 0;
+	border: 0;
+	border-radius: 30px;
+	background-color: var(--tbg);
+	cursor: pointer;
+	transition: all 0.2s ease;
+}
+.toggle .thumb {
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 20px;
+	height: 20px;
+	border-radius: 50%;
+	background-color: var(--tc);
+	transition: transform 0.5s cubic-bezier(0.23, 1, 0.32, 1);
+}
+body.dark .toggle .thumb {
+	transform: translateX(26px);
+}
+/* Exactly one icon is visible at a time, on the side the thumb is not — the way
+   the blog's toggle behaves: sun while the theme is light, moon while dark.
+   Drawn rather than set as emoji, whose own metrics never centre predictably. */
+.toggle .face {
+	position: absolute;
+	top: 50%;
+	width: 16px;
+	height: 16px;
+	margin-top: -8px;
+	transition: opacity 0.25s ease;
+	pointer-events: none;
+}
+.toggle .sun {
+	right: 5px;
+	opacity: 1;
+}
+.toggle .moon {
+	left: 5px;
+	opacity: 0;
+}
+body.dark .toggle .sun {
+	opacity: 0;
+}
+body.dark .toggle .moon {
+	opacity: 1;
+}
+
+.day-nav {
+	display: flex;
+	justify-content: space-between;
+	font-size: 0.85rem;
+	margin-bottom: 1.58rem;
+}
+
+.section-heading {
+	margin: 2.37rem 0 1.58rem;
+	font-size: 1rem;
+	letter-spacing: 0.02em;
+}
+
+.story {
+	display: block;
+	color: inherit;
+	margin-bottom: 2.37rem;
+}
+.story h3 {
+	font-size: 1.58rem;
+	margin-bottom: 0.79rem;
+}
+.story .when {
+	color: var(--meta);
+	font-weight: 400;
+	font-size: 0.85rem;
+	font-family: 'Lato', sans-serif;
+	white-space: nowrap;
+}
+.story p {
+	margin-bottom: 0.4rem;
+}
+.story .meta {
+	color: var(--meta);
+	font-size: 13px;
+	margin: 0;
+}
+
+/* The bio block on the blog's front page, reused for the sign-up form. */
+.subscribe {
+	font-size: 0.8rem;
+	padding: 1.1rem;
+	margin: 2.37rem 0;
+	border-top: 4px dotted var(--textLink);
+	border-bottom: 4px dotted var(--textLink);
+}
+.subscribe h4 {
+	margin-bottom: 0.79rem;
+}
+.subscribe form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+.subscribe input[type='email'] {
+	flex: 1 1 15rem;
+	font: inherit;
+	padding: 0.5rem 0.7rem;
+	color: var(--textNormal);
+	background: var(--bg);
+	border: 1px solid var(--hr);
+	border-radius: 3px;
+}
+.subscribe input[type='email']:focus {
+	outline: 2px solid var(--textLink);
+	outline-offset: 1px;
+}
+.subscribe button {
+	font: inherit;
+	padding: 0.5rem 1rem;
+	color: var(--textButton);
+	background: var(--textLink);
+	border: 0;
+	border-radius: 3px;
+	cursor: pointer;
+}
+.subscribe button:hover {
+	background: var(--textLinkHover);
+}
+.subscribe .hp {
+	position: absolute;
+	left: -9999px;
+}
+.subscribe .note {
+	color: var(--meta);
+	font-size: 12px;
+	margin: 0.79rem 0 0;
+}
+
+.archive-row {
+	display: flex;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 1rem;
+	padding: 0.4rem 0;
+	border-bottom: 1px solid var(--hr);
+}
+.archive-row .count {
+	color: var(--meta);
+	font-size: 13px;
+}
+
+.empty {
+	color: var(--meta);
+}
+
+footer ul {
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	column-gap: 16px;
+	margin: 3.16rem 0 0;
+	padding: 10px 0 0;
+	list-style: none;
+	border-top: 1px solid var(--textNormal);
+	font-size: 0.85rem;
+}
+footer li {
+	padding-top: 5px;
+}
+
+@media (max-width: 768px) {
+	h1 {
+		font-size: 1.6rem;
+	}
+	h2 {
+		font-size: 1.4rem;
+	}
+	h3 {
+		font-size: 1.2rem;
+	}
+	.story h3 {
+		font-size: 1.3rem;
+	}
+	p {
+		margin-bottom: 1.1rem;
+	}
+}
+@media (max-width: 550px) {
+	.container {
+		padding: 1.58rem;
+	}
+	footer ul {
+		flex-direction: column;
+	}
+}

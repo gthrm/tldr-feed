@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<meta name="color-scheme" content="light dark" />
+		<link rel="icon" href="%sveltekit.assets%/favicon.svg" />
+		<link rel="preload" href="%sveltekit.assets%/fonts/lato-400.woff2" as="font" type="font/woff2" crossorigin />
+		<link rel="preload" href="%sveltekit.assets%/fonts/roboto-slab-700.woff2" as="font" type="font/woff2" crossorigin />
+		<!--
+			The theme is a class on <body>, the way the blog does it. Applied before
+			the first paint, or a dark-mode reader gets a white flash on every page.
+		-->
+		<script>
+			(function () {
+				try {
+					var saved = localStorage.getItem('theme');
+					var dark = saved
+						? saved === 'dark'
+						: window.matchMedia('(prefers-color-scheme: dark)').matches;
+					if (dark) document.documentElement.classList.add('dark-pending');
+				} catch (e) {}
+			})();
+		</script>
+		%sveltekit.head%
+	</head>
+	<body data-sveltekit-preload-data="hover">
+		<div style="display: contents">%sveltekit.body%</div>
+		<script>
+			(function () {
+				var root = document.documentElement;
+				if (root.classList.contains('dark-pending')) {
+					document.body.classList.add('dark');
+					root.classList.remove('dark-pending');
+				}
+				// The only behaviour on the site. Pages ship no other JavaScript.
+				var button = document.querySelector('[data-theme-toggle]');
+				if (!button) return;
+				button.addEventListener('click', function () {
+					var dark = document.body.classList.toggle('dark');
+					try {
+						localStorage.setItem('theme', dark ? 'dark' : 'light');
+					} catch (e) {}
+				});
+			})();
+		</script>
+	</body>
+</html>

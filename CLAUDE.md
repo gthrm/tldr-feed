@@ -5,6 +5,22 @@ TLDR-style tech/dev/AI news digest → Telegram channel, 10 slots a day between
 
 Full plan: `~/.claude/plans/graceful-conjuring-ember.md`
 
+## Layout
+
+A monorepo. Two applications that share one resource and no code:
+
+| path | what |
+| --- | --- |
+| `apps/bot` | the Telegram bot: ten slots a day, its own SQLite, unchanged logic |
+| `apps/daily-api` | NestJS: the evening run and the subscription endpoints |
+| `apps/daily-web` | SvelteKit: the static day pages at tldr.cdroma.me |
+| `packages/sources` | `sources.yaml` — the one source list, read by both apps |
+
+The bot posts often; the daily digest runs once in the evening and builds a page and
+an email. They share the source list and nothing else: no shared code, no shared
+database, no calls between them. Every app resolves the source list from
+`SOURCES_PATH`, falling back to `packages/sources/sources.yaml`.
+
 ## Working rules
 
 These come from mistakes made while planning this project. They are not optional.
@@ -53,6 +69,11 @@ and advertising.
 
 Never invent limits either — no cap on items per digest, no cap per source.
 Every new item is posted. If a boundary is not in this file, do not add one.
+
+One boundary is in this file, and it is the user's: **the daily digest carries the
+twenty best stories of the day, counted after the relevance gate, not before.**
+That is `DAILY_LIMIT` in `apps/daily-api`. It applies to the daily only — the bot
+still posts everything. Do not remove it, and do not extend it to the bot.
 
 ### Never hunt for credentials
 

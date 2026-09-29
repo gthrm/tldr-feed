@@ -27,14 +27,16 @@ services:
       options: { max-size: '10m', max-file: '3' }
 
   bot:
-    build: .
+    build:
+      context: .
+      dockerfile: apps/bot/Dockerfile
     restart: unless-stopped
     env_file: .env
     environment:
       RSSHUB_BASE_URL: http://rsshub:1200
       TZ: Europe/Belgrade
     volumes:
-      - ./data:/app/data
+      - ./apps/bot/data:/app/data
     depends_on:
       rsshub:
         condition: service_healthy
@@ -44,3 +46,49 @@ services:
     logging:
       driver: json-file
       options: { max-size: '10m', max-file: '3' }
+
+  # The daily digest: its own pipeline, its own storage, its own schedule.
+  # It shares the source list with the bot and nothing else.
+  daily-api:
+    build:
+      context: .
+      dockerfile: apps/daily-api/Dockerfile
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      TZ: Europe/Belgrade
+      RSSHUB_BASE_URL: http://rsshub:1200
+    volumes:
+      - ./apps/daily-api/data:/app/data
+      - site:/public
+    depends_on:
+      rsshub:
+        condition: service_healthy
+    # jsdom over a day's worth of articles is the peak; the site build is small.
+    mem_limit: 1g
+    logging:
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+
+  # Serves last night's build. Bound to loopback: the way in is the Cloudflare
+  # tunnel already running on the Pi.
+  caddy:
+    image: caddy:alpine
+    restart: unless-stopped
+    ports:
+      - '127.0.0.1:3091:80'
+    volumes:
+      - site:/srv:ro
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+    depends_on:
+      daily-api:
+        condition: service_healthy
+    mem_limit: 64m
+    logging:
+      driver: json-file
+      options: { max-size: '10m', max-file: '3' }
+
+volumes:
+  site:
+  caddy-data:

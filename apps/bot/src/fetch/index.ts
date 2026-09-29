@@ -1,5 +1,6 @@
 // One dispatcher over the four source kinds, so the pipeline never branches on them.
 import { readFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 import { parse } from 'yaml';
 import { fetchFeed, UA } from './parse-feed.ts';
 import { fetchSitemap } from './sitemap.ts';
@@ -26,10 +27,14 @@ export type Source = {
 
 type SourcesFile = { defaults?: Partial<Source>; sources: Source[] };
 
+// The source list is shared with the daily digest: one file, two consumers, so a
+// source added or dropped here changes both. Only the list is shared - no code is.
+const sourcesFile = process.env.SOURCES_PATH
+  ? pathToFileURL(process.env.SOURCES_PATH)
+  : new URL('../../../../packages/sources/sources.yaml', import.meta.url);
+
 export function loadSources(): { defaults: Partial<Source>; sources: Source[] } {
-  const cfg = parse(
-    readFileSync(new URL('../sources.yaml', import.meta.url), 'utf8'),
-  ) as SourcesFile;
+  const cfg = parse(readFileSync(sourcesFile, 'utf8')) as SourcesFile;
   const d = cfg.defaults ?? {};
   return { defaults: d, sources: cfg.sources.map((src) => ({ ...d, ...src })) };
 }

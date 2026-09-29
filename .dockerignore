@@ -1,5 +1,9 @@
-node_modules
-data
+**/node_modules
+**/data
+**/dist
+**/build
+**/.svelte-kit
 .env
 .git
 *.log
+**/*.tsbuildinfo
