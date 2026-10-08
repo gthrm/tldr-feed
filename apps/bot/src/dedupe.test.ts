@@ -83,7 +83,7 @@ test('the grey band is left to the resolver, and defaults to different', async (
   assert.ok(merged.length <= split.length);
 });
 
-test('a long digest splits into whole-item messages, never mid-sentence', async () => {
+test('a digest sends exactly one complete message per story', async () => {
   const { formatDigest } = await import('./format.ts');
   const many = Array.from({ length: 40 }, (_, i) => ({
     title: `Story number ${i} about a thing that happened in the industry today`,
@@ -95,7 +95,7 @@ test('a long digest splits into whole-item messages, never mid-sentence', async 
     section: 'bigtech',
   }));
   const msgs = formatDigest(many);
-  assert.ok(msgs.length > 1, 'should split');
+  assert.equal(msgs.length, many.length);
   for (const m of msgs) assert.ok(m.length <= 4096, `message too long: ${m.length}`);
   // no item is cut in half: every opening tag has its closing tag
   for (const m of msgs) {

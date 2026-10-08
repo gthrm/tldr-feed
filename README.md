@@ -2,15 +2,15 @@
 
 Two products over one list of sources.
 
-| | what it is | where it runs |
-| --- | --- | --- |
-| [`apps/bot`](apps/bot) | the Telegram channel: ten slots a day, 09:00–21:00 CET, only when there is something new | its own container, its own SQLite |
-| [`apps/daily-api`](apps/daily-api) | the daily digest: one evening run that builds a page and sends one email | its own container, Neon Postgres |
-| [`apps/daily-web`](apps/daily-web) | the site at `tldr.cdroma.me`: a static page per day | files, served by Caddy |
-| [`packages/sources`](packages/sources) | `sources.yaml` — the one thing both read | a file |
+|                                        | what it is                                                                                        | where it runs                     |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------- | --------------------------------- |
+| [`apps/bot`](apps/bot)                 | the Telegram channel: once daily at 10:00 Europe/Belgrade, up to ten stories in separate messages | its own container, its own SQLite |
+| [`apps/daily-api`](apps/daily-api)     | the daily digest: one evening run that builds a page and sends one email                          | its own container, Neon Postgres  |
+| [`apps/daily-web`](apps/daily-web)     | the site at `tldr.cdroma.me`: a static page per day                                               | files, served by Caddy            |
+| [`packages/sources`](packages/sources) | `sources.yaml` — the one thing both read                                                          | a file                            |
 
-The bot posts often and posts everything. The daily is a different product with a
-different rhythm: one run in the evening, the twenty best stories of the day, one
+The bot publishes the ten best new stories once each morning, one message per
+story. The daily runs in the evening: the twenty best stories of the day, one
 page, one email. **They share the source list and
 nothing else** — no shared code, no shared database, no calls between them. Add
 or drop a source in `packages/sources/sources.yaml` and both pick it up.
@@ -70,8 +70,8 @@ tunnel already running on the Pi:
 
 ```yaml
 # ~/.cloudflared/config.yml, before the http_status:404 rule
-  - hostname: tldr.cdroma.me
-    service: http://localhost:3091
+- hostname: tldr.cdroma.me
+  service: http://localhost:3091
 ```
 
 then `cloudflared tunnel route dns <tunnel> tldr.cdroma.me` and restart the

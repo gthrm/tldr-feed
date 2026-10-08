@@ -1,7 +1,7 @@
 # tldr-feed
 
-TLDR-style tech/dev/AI news digest → Telegram channel, 10 slots a day between
-09:00 and 21:00 CET, only when there is something new.
+TLDR-style tech/dev/AI news digest → Telegram channel, once a day at
+10:00 Europe/Belgrade, at most ten stories, each in a separate message.
 
 Full plan: `~/.claude/plans/graceful-conjuring-ember.md`
 
@@ -9,14 +9,14 @@ Full plan: `~/.claude/plans/graceful-conjuring-ember.md`
 
 A monorepo. Two applications that share one resource and no code:
 
-| path | what |
-| --- | --- |
-| `apps/bot` | the Telegram bot: ten slots a day, its own SQLite, unchanged logic |
-| `apps/daily-api` | NestJS: the evening run and the subscription endpoints |
-| `apps/daily-web` | SvelteKit: the static day pages at tldr.cdroma.me |
-| `packages/sources` | `sources.yaml` — the one source list, read by both apps |
+| path               | what                                                                        |
+| ------------------ | --------------------------------------------------------------------------- |
+| `apps/bot`         | the Telegram bot: daily top ten at 10:00, separate messages, its own SQLite |
+| `apps/daily-api`   | NestJS: the evening run and the subscription endpoints                      |
+| `apps/daily-web`   | SvelteKit: the static day pages at tldr.cdroma.me                           |
+| `packages/sources` | `sources.yaml` — the one source list, read by both apps                     |
 
-The bot posts often; the daily digest runs once in the evening and builds a page and
+The bot publishes once in the morning; the daily digest runs once in the evening and builds a page and
 an email. They share the source list and nothing else: no shared code, no shared
 database, no calls between them. Every app resolves the source list from
 `SOURCES_PATH`, falling back to `packages/sources/sources.yaml`.
@@ -67,13 +67,21 @@ Only these are out: party politics, legislative process with no tech angle,
 celebrity gossip, sport, purely local news, health advice, coupon round-ups
 and advertising.
 
-Never invent limits either — no cap on items per digest, no cap per source.
-Every new item is posted. If a boundary is not in this file, do not add one.
+Only the hottest stories go out, because every item costs model calls: the
+Telegram bot posts up to ten once daily at 10:00 Europe/Belgrade, each in a
+separate message; the
+daily page and email the top 20 (`DAILY_LIMIT`). The cut is made on the ranking,
+before any model call. Posting everything ran ~1000 items a day through the
+model and emptied the OpenAI balance twice (2026-09-29, 2026-10-01).
+
+Never invent other limits — no cap per source, no narrower topic filter. If a
+boundary is not in this file, do not add one.
 
 One boundary is in this file, and it is the user's: **the daily digest carries the
 twenty best stories of the day, counted after the relevance gate, not before.**
-That is `DAILY_LIMIT` in `apps/daily-api`. It applies to the daily only — the bot
-still posts everything. Do not remove it, and do not extend it to the bot.
+That is `DAILY_LIMIT` in `apps/daily-api`. The Telegram bot has its own fixed
+ceiling of ten and a persistent guard allowing one publication attempt per local
+day. Keep the two limits independent.
 
 ### Never hunt for credentials
 

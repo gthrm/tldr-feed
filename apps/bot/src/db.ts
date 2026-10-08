@@ -3,6 +3,7 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'node:fs';
 import type { Item } from './normalize.ts';
 import { dirname } from 'node:path';
+import { publicationDay } from './publication.ts';
 
 const path = process.env.DB_PATH ?? 'data/tldr-feed.db';
 mkdirSync(dirname(path), { recursive: true });
@@ -60,6 +61,11 @@ db.exec(`
     posted_at   INTEGER NOT NULL
   );
   CREATE INDEX IF NOT EXISTS posted_at ON posted(posted_at);
+
+  CREATE TABLE IF NOT EXISTS daily_publications (
+    day        TEXT PRIMARY KEY,
+    started_at INTEGER NOT NULL
+  );
 
   CREATE TABLE IF NOT EXISTS summaries (
     content_hash TEXT PRIMARY KEY,      -- never pay twice for the same article
@@ -141,6 +147,10 @@ const selPending = db.prepare(`
   WHERE consumed_at IS NULL AND first_seen > ?
   ORDER BY COALESCE(published_at, first_seen) DESC
 `);
+const selCollected = db.prepare(`
+  SELECT id, source, section, title, url, domain, published_at, raw_summary, points, weight, first_seen
+  FROM items WHERE first_seen >= ?
+`);
 const updConsumed = db.prepare('UPDATE items SET consumed_at = ? WHERE id = ?');
 const selWasPosted = db.prepare('SELECT 1 FROM posted WHERE cluster_key = ? AND posted_at > ?');
 const selRecentTitles = db.prepare(
@@ -165,13 +175,40 @@ const updSourceState = db.prepare(`
 const delItems = db.prepare('DELETE FROM items WHERE first_seen < ?');
 const delPosted = db.prepare('DELETE FROM posted WHERE posted_at < ?');
 const delSummaries = db.prepare('DELETE FROM summaries WHERE created_at < ?');
+const insPublication = db.prepare(
+  'INSERT OR IGNORE INTO daily_publications (day, started_at) VALUES (?, ?)',
+);
+const selPostedTimes = db.prepare('SELECT posted_at FROM posted WHERE posted_at >= ?');
+const delPublications = db.prepare('DELETE FROM daily_publications WHERE started_at < ?');
+
+const claimPublication = db.transaction((date: Date, allowLegacyPosts: boolean): boolean => {
+  const day = publicationDay(date);
+  // Respect messages sent by the old scheduler on the day of the upgrade too.
+  const recent = selPostedTimes.all(date.getTime() - 48 * 3.6e6) as { posted_at: number }[];
+  if (!allowLegacyPosts && recent.some((row) => publicationDay(new Date(row.posted_at)) === day))
+    return false;
+  return insPublication.run(day, date.getTime()).changes === 1;
+});
+
+/** Claim one batch per local day, even across restarts or concurrent processes. */
+export function claimDailyPublication(date = new Date(), allowLegacyPosts = false): boolean {
+  return claimPublication.immediate(date, allowLegacyPosts);
+}
 /**
- * Items the poller has collected that no slot has considered yet.
- * The poller runs every 20 minutes; slots are 80 minutes apart, so without
- * this a fast feed rotates items out between slots and they are lost.
+ * Recently collected items that no publication has considered yet.
+ * The poller runs every 20 minutes, preserving stories from fast-moving feeds.
  */
 export function pendingItems(maxAgeHours = 36): ItemRow[] {
   return selPending.all(now() - maxAgeHours * 3.6e6) as ItemRow[];
+}
+
+/** Manual rebuild: reconsider today's collected stories, including old-slot rejects. */
+export function collectedToday(date = new Date()): ItemRow[] {
+  const day = publicationDay(date);
+  const rows = selCollected.all(date.getTime() - 48 * 3.6e6) as (ItemRow & {
+    first_seen: number;
+  })[];
+  return rows.filter((row) => publicationDay(new Date(row.first_seen)) === day);
 }
 
 /** A slot has considered these, whether or not they made the digest. */
@@ -197,6 +234,29 @@ export function recentPostedTitles(limit = 200): PostedRow[] {
 
 // Keyed by url AND content: two aggregator pages can yield identical extracted
 // text, and a content-only key then serves one story's summary for another.
+// The hard ceiling on spend: one row per local day, one tick per request sent
+// to the model. Whatever goes wrong upstream — a flooded queue, a retry loop —
+// the bot cannot make more than this many calls in a day.
+db.exec('CREATE TABLE IF NOT EXISTS model_calls (day TEXT PRIMARY KEY, n INTEGER NOT NULL)');
+const selModelCalls = db.prepare('SELECT n FROM model_calls WHERE day = ?');
+const incModelCalls = db.prepare(`
+  INSERT INTO model_calls (day, n) VALUES (?, 1)
+  ON CONFLICT(day) DO UPDATE SET n = n + 1
+`);
+
+const spendCall = db.transaction((limit: number, reserve: number): boolean => {
+  const day = publicationDay();
+  const used = (selModelCalls.get(day) as { n: number } | undefined)?.n ?? 0;
+  if (used >= limit - reserve) return false;
+  incModelCalls.run(day);
+  return true;
+});
+
+/** Dedup can reserve budget for classification and summaries without spending it. */
+export function spendModelCall(limit: number, reserve = 0): boolean {
+  return spendCall.immediate(limit, reserve);
+}
+
 export function cacheSummary(hash: string, model: string, summary: string, minutes: number): void {
   insSummary.run(hash, model, summary, minutes, now());
 }
@@ -257,4 +317,5 @@ export function prune(days = 30): void {
   delItems.run(now() - days * 864e5);
   delPosted.run(now() - days * 864e5);
   delSummaries.run(now() - days * 864e5);
+  delPublications.run(now() - days * 864e5);
 }

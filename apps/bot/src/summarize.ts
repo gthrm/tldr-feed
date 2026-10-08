@@ -1,11 +1,15 @@
 // TLDR-style summaries. The prompt is the one the model bake-off was run with;
 // gpt-5.6-terra was chosen over gpt-5.6-luna because it picks the detail that
 // matters rather than the first number it finds.
-import { cacheSummary, cachedSummary } from './db.ts';
+import { cacheSummary, cachedSummary, spendModelCall } from './db.ts';
 import type { Article } from './extract.ts';
+import { MAX_DAILY_POSTS } from './publication.ts';
 
 const MODEL = process.env.OPENAI_MODEL ?? 'gpt-5.6-terra';
 const API = 'https://api.openai.com/v1/chat/completions';
+// 10 posted items a day need about 20 calls; the rest is room for rejects and
+// dedup tiebreaks. Past this the bot stays silent until tomorrow.
+const DAILY_CALLS = Number(process.env.MAX_MODEL_CALLS_PER_DAY ?? 100);
 
 export const PROMPT = `You write TLDR-newsletter-style summaries of tech news.
 
@@ -38,12 +42,15 @@ type ChatResponse = {
   choices?: { message?: { content?: string }; finish_reason?: string }[];
 };
 
-async function call(messages: ChatMessage[], maxTokens = 300): Promise<string> {
+async function call(messages: ChatMessage[], maxTokens = 300, reserve = 0): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error('OPENAI_API_KEY is not set');
 
   let last = '';
   for (let attempt = 0; attempt < 3; attempt++) {
+    if (!spendModelCall(DAILY_CALLS, reserve)) {
+      throw new Error(`daily model budget spent (${DAILY_CALLS} calls)`);
+    }
     const res = await fetch(API, {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
@@ -96,6 +103,9 @@ export async function sameStory(a: string, b: string): Promise<boolean> {
       },
     ],
     50,
+    // Leave two calls per story plus room for rejected candidates. A full day's
+    // grey-band comparisons must not exhaust the budget before any story is ready.
+    MAX_DAILY_POSTS * 4,
   );
   return /^yes/i.test(answer.trim());
 }

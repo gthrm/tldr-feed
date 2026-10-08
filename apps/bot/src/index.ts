@@ -1,4 +1,4 @@
-// The slot: fetch everything, keep what is new, post one digest — or nothing.
+// One daily top ten, published as one Telegram message per story.
 import { loadSources, fetchAll } from './fetch/index.ts';
 import { closeBrowser, fetchHtmlWithBrowser } from './fetch/browser.ts';
 import { clusterItems, compare } from './dedupe.ts';
@@ -16,14 +16,22 @@ import {
   pendingItems,
   markConsumed,
   closeDb,
+  claimDailyPublication,
+  collectedToday,
 } from './db.ts';
 import { isDomainRoot } from './normalize.ts';
 import { startSchedule } from './schedule.ts';
 import type { Item } from './normalize.ts';
 import type { ItemRow } from './db.ts';
+import { MAX_DAILY_POSTS, publicationDay, TZ } from './publication.ts';
 
-// Every new item goes out; a slot is skipped only when nothing new survived.
+// A slot is skipped only when nothing new survived.
 const MIN_ITEMS = Number(process.env.MIN_ITEMS ?? 1);
+// Fixed ceiling: obsolete MAX_ITEMS_PER_SLOT settings cannot change the top ten.
+const MAX_ITEMS = MAX_DAILY_POSTS;
+// A dead model (no credits, bad key, outage) fails every call the same way.
+// Stop after a few instead of walking the whole queue into the same error.
+const MAX_MODEL_FAILURES = 3;
 const DRY_RUN = process.env.DRY_RUN === '1';
 const RSSHUB = process.env.RSSHUB_BASE_URL ?? 'http://localhost:1200';
 
@@ -40,9 +48,8 @@ process.on('uncaughtException', (err) => {
 });
 
 /**
- * Collection only, on a much shorter cycle than posting. Slots are 80 minutes
- * apart; a fast feed (HN front page, Lobsters, r/LocalLLaMA) rotates items out
- * well inside that window, so anything not collected in between is lost.
+ * Collection only, every 20 minutes. Fast feeds rotate stories out long before
+ * the next morning's publication, so save them without posting anything.
  */
 export async function poll(): Promise<void> {
   const { sources } = loadSources();
@@ -66,10 +73,16 @@ function rowToItem(r: ItemRow): Item {
   };
 }
 
-export async function runSlot(): Promise<void> {
+export async function runSlot(options: { rebuildToday?: boolean } = {}): Promise<void> {
+  const startedAt = new Date();
+  const rebuildToday = options.rebuildToday ?? false;
+  if (!DRY_RUN && !claimDailyPublication(startedAt, rebuildToday)) {
+    log('daily publication already attempted — skipped');
+    return;
+  }
   // Whatever the poller has queued since the last slot. No fetching here: the
   // slot publishes what was already collected.
-  const fresh = pendingItems().map(rowToItem);
+  const fresh = (rebuildToday ? collectedToday(startedAt) : pendingItems()).map(rowToItem);
   log(`slot: ${fresh.length} items queued since the last slot`);
 
   if (fresh.length === 0) {
@@ -96,63 +109,82 @@ export async function runSlot(): Promise<void> {
 
   const ranked = rankClusters(unseen);
 
-  // Each item costs a classify call, a page fetch and a summarize call. Done one
-  // at a time, a busy slot would outlast its own 80-minute interval.
+  // Process candidates concurrently, preserving rank and the daily ceiling.
   const CONCURRENCY = Number(process.env.PIPELINE_CONCURRENCY ?? 6);
   const slots: (Entry | null)[] = Array.from({ length: ranked.length }, () => null);
   let next = 0;
+  let filled = 0;
+  let inFlight = 0;
+  let modelFailures = 0;
+
+  // Walks the ranking from the top and stops once MAX_ITEMS have survived.
+  // An item in flight counts towards the cap, so no call is made for a story
+  // that could not be posted anyway.
+  const work = async (idx: number): Promise<void> => {
+    const head = ranked[idx].items[0];
+
+    if (isDomainRoot(head.url)) return; // never link a bare domain
+
+    // Relevance gate: HN carries everything, press feeds carry event promos.
+    // Headline-only, before extraction, so rejects cost almost nothing.
+    let verdict;
+    try {
+      verdict = await classify(head.title, head.domain);
+    } catch (err) {
+      modelFailures++;
+      log(`classify failed for ${head.url}:`, err);
+      return;
+    }
+    if (!verdict.relevant) {
+      log(`skip (off-topic): ${head.title.slice(0, 60)}`);
+      return;
+    }
+    if (verdict.promo) {
+      log(`skip (promo): ${head.title.slice(0, 60)}`);
+      return;
+    }
+
+    const article = await extractArticle(head.url, head.rawSummary, fetchHtmlWithBrowser);
+    // A thin description still makes a usable two-sentence summary.
+    if (!article.ok || article.words < 20) {
+      log(`skip (unreadable): ${head.url}`);
+      return; // a dead link must not reach the channel
+    }
+
+    let summary: string | null;
+    try {
+      summary = await summarize(head.title, article);
+    } catch (err) {
+      modelFailures++;
+      log(`summarize failed for ${head.url}:`, err);
+      return;
+    }
+    if (!summary) return;
+
+    slots[idx] = {
+      title: head.title,
+      url: head.url,
+      domain: head.domain,
+      summary,
+      minutes: article.minutes,
+      section: verdict.section,
+    };
+    filled++;
+  };
 
   await Promise.all(
-    Array.from({ length: CONCURRENCY }, async () => {
-      while (next < ranked.length) {
-        const idx = next++;
-        const head = ranked[idx].items[0];
-
-        if (isDomainRoot(head.url)) continue; // never link a bare domain
-
-        // Relevance gate: HN carries everything, press feeds carry event promos.
-        // Headline-only, before extraction, so rejects cost almost nothing.
-        let verdict;
+    Array.from({ length: Math.min(CONCURRENCY, MAX_ITEMS) }, async () => {
+      while (
+        next < ranked.length &&
+        filled + inFlight < MAX_ITEMS &&
+        modelFailures < MAX_MODEL_FAILURES
+      ) {
+        inFlight++;
         try {
-          verdict = await classify(head.title, head.domain);
-        } catch (err) {
-          log(`classify failed for ${head.url}:`, err);
-          continue;
+          await work(next++);
+        } finally {
+          inFlight--;
         }
-        if (!verdict.relevant) {
-          log(`skip (off-topic): ${head.title.slice(0, 60)}`);
-          continue;
-        }
-        if (verdict.promo) {
-          log(`skip (promo): ${head.title.slice(0, 60)}`);
-          continue;
-        }
-
-        const article = await extractArticle(head.url, head.rawSummary, fetchHtmlWithBrowser);
-        // A thin description still makes a usable two-sentence summary; dropping
-        // the item loses it entirely, and every new item is meant to be posted.
-        if (!article.ok || article.words < 20) {
-          log(`skip (unreadable): ${head.url}`);
-          continue; // a dead link must not reach the channel
-        }
-
-        let summary: string | null;
-        try {
-          summary = await summarize(head.title, article);
-        } catch (err) {
-          log(`summarize failed for ${head.url}:`, err);
-          continue;
-        }
-        if (!summary) continue;
-
-        slots[idx] = {
-          title: head.title,
-          url: head.url,
-          domain: head.domain,
-          summary,
-          minutes: article.minutes,
-          section: verdict.section,
-        };
       }
     }),
   );
@@ -160,15 +192,21 @@ export async function runSlot(): Promise<void> {
   // rank order preserved: the slot array is filled by index, not by finish time
   const entries: Entry[] = slots.filter((e): e is Entry => e !== null);
 
+  if (entries.length < MIN_ITEMS && modelFailures >= MAX_MODEL_FAILURES) {
+    // Keep the queue for tomorrow; there is no second publication today.
+    log(`model failed ${modelFailures} times — slot aborted, queue kept`);
+    return;
+  }
+
   if (entries.length < MIN_ITEMS) {
     // Nothing made it, but everything was considered: rejects must not be
     // reconsidered at every later slot.
-    markConsumed(fresh.map((i) => i.id));
+    if (!DRY_RUN) markConsumed(fresh.map((i) => i.id));
     log(`only ${entries.length} items survived (min ${MIN_ITEMS}) — slot skipped`);
     return;
   }
 
-  const messages = formatDigest(entries);
+  const messages = formatDigest(entries, startedAt, TZ);
 
   if (DRY_RUN) {
     // A preview must not eat the queue: nothing is marked consumed here.
@@ -182,23 +220,34 @@ export async function runSlot(): Promise<void> {
     return;
   }
 
-  // Send first, then consume. A Telegram failure half way through must leave
-  // the rest of the queue for the next slot rather than swallowing it.
-  for (const m of messages) await sendMessage(m);
-  markConsumed(fresh.map((i) => i.id));
-  for (const e of entries) {
+  // Record each successful message immediately so a partial failure cannot
+  // repost it tomorrow. The persistent daily claim prevents retries today.
+  for (const [idx, e] of entries.entries()) {
+    if (publicationDay() !== publicationDay(startedAt)) {
+      log('publication crossed midnight — remaining posts kept for tomorrow');
+      return;
+    }
+    await sendMessage(messages[idx]);
     const cluster = ranked.find((c) => c.items[0].url === e.url);
-    if (cluster) recordPosted(cluster.key, cluster.items[0].id, e.title);
+    if (cluster) {
+      recordPosted(cluster.key, cluster.items[0].id, e.title);
+      markConsumed(cluster.items.map((item) => item.id));
+    }
   }
+  markConsumed(fresh.map((i) => i.id));
   log(`posted ${entries.length} items`);
 }
 
 async function main(): Promise<void> {
   // `--slot` runs one full cycle by hand: collect, then publish.
-  if (process.argv.includes('--slot') || process.argv.includes('--once')) {
+  if (
+    process.argv.includes('--slot') ||
+    process.argv.includes('--once') ||
+    process.argv.includes('--today')
+  ) {
     try {
       await poll();
-      await runSlot();
+      await runSlot({ rebuildToday: process.argv.includes('--today') });
     } finally {
       await closeBrowser();
       closeDb();
@@ -216,7 +265,7 @@ async function main(): Promise<void> {
   }
   prune();
   startSchedule(runSlot, poll);
-  log('scheduler started');
+  log(`scheduler started: daily top ${MAX_ITEMS} at 10:00 ${TZ}, one story per message`);
 }
 
-await main();
+if (import.meta.main) await main();
