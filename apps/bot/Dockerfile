@@ -1,11 +1,8 @@
 # Build context is the monorepo root: the bot needs packages/sources, which is
 # shared with the daily digest.
-# Two native pieces here: better-sqlite3 needs a toolchain, Playwright needs Chromium.
+# One native piece here: Playwright needs Chromium. State lives in Postgres (Neon).
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      python3 make g++ ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
 COPY apps/bot/package.json ./apps/bot/
 RUN npm ci --omit=dev --no-audit --no-fund --foreground-scripts \
@@ -26,6 +23,5 @@ COPY apps/bot/scripts ./apps/bot/scripts
 # The shared source list. Same relative layout as the repo, so the path the code
 # resolves works identically here and on a laptop.
 COPY packages/sources ./packages/sources
-RUN mkdir -p /app/data
 # Node 24 runs .ts directly via type stripping — no build step.
 CMD ["node", "apps/bot/src/index.ts"]

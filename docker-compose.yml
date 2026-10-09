@@ -35,8 +35,6 @@ services:
     environment:
       RSSHUB_BASE_URL: http://rsshub:1200
       TZ: Europe/Belgrade
-    volumes:
-      - ./apps/bot/data:/app/data
     depends_on:
       rsshub:
         condition: service_healthy
@@ -47,9 +45,8 @@ services:
       driver: json-file
       options: { max-size: '10m', max-file: '3' }
 
-  # The daily digest: its own pipeline, its own storage, its own schedule.
-  # It shares the source list with the bot and nothing else.
   daily-api:
+    # The page and email of the bot's ten, at 10:30. Selects nothing itself.
     build:
       context: .
       dockerfile: apps/daily-api/Dockerfile

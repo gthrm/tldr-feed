@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { DailyJob } from './daily.job.js';
-import type { DayEntry } from '../pipeline/pipeline.service.js';
+import type { DayEntry } from '../shared/entry.js';
 
 /**
  * The budget is the requirement: Neon suspends after five minutes of inactivity,
@@ -32,8 +32,7 @@ function harness(entries: DayEntry[]) {
 
   const job = new DailyJob(
     { get: (key: string) => (key === 'tz' ? 'Europe/Belgrade' : undefined) } as never,
-    { run: vi.fn(async () => entries) } as never,
-    { saveDay: track('digest.saveDay', 1) } as never,
+    { day: track('digest.day', entries) } as never,
     {
       active: track('subscribers.active', [{ email: 'a@example.com', token: 't' }]),
       mailedOn: track('mailLog.day', new Set<string>()),
@@ -47,33 +46,33 @@ function harness(entries: DayEntry[]) {
   return { job, calls, sendDigest };
 }
 
-describe('the evening run', () => {
+describe('the daily page and email', () => {
   it('touches the database four times, whatever the day holds', async () => {
     const many = Array.from({ length: 60 }, (_, i) => entry(i));
     const { job, calls } = harness(many);
 
     await job.run('2026-09-28');
 
-    // Sixty stories and a mailing list, in four statements: save, read the list,
-    // read who already got it, record who just did.
+    // Sixty stories and a mailing list, in four statements: read the bot's day,
+    // read the list, read who already got it, record who just did.
     expect(calls).toEqual([
-      'digest.saveDay',
+      'digest.day',
       'subscribers.active',
       'mailLog.day',
       'mailLog.record',
     ]);
   });
 
-  it('writes nothing and sends nothing on an empty day', async () => {
+  it('writes nothing and sends nothing on a day the bot posted nothing', async () => {
     const { job, calls } = harness([]);
     await job.run('2026-09-28');
-    expect(calls).toEqual([]);
+    expect(calls).toEqual(['digest.day']);
   });
 
-  it('never touches the database on a dry run', async () => {
+  it('only reads on a dry run', async () => {
     const { job, calls } = harness([entry(0)]);
     await job.run('2026-09-28', { dryRun: true });
-    expect(calls).toEqual([]);
+    expect(calls).toEqual(['digest.day']);
   });
 
   it('tells the mailer it is a dry run, whatever MAIL_DRY_RUN says', async () => {

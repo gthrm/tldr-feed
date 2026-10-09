@@ -1,5 +1,5 @@
-# Build context is the monorepo root: the daily needs packages/sources, shared
-# with the bot, and the site sources, which it rebuilds every evening.
+# Build context is the monorepo root: the daily needs the site sources, which it
+# rebuilds every day from the stories the bot posted.
 FROM node:24-bookworm-slim AS deps
 WORKDIR /app
 COPY package.json ./
@@ -22,7 +22,6 @@ RUN npm install --include=dev --no-audit --no-fund \
 FROM deps AS build
 COPY apps/daily-api ./apps/daily-api
 COPY apps/daily-web ./apps/daily-web
-COPY packages ./packages
 RUN npm run --workspace @tldr/daily-api build
 
 FROM node:24-bookworm-slim
@@ -30,12 +29,10 @@ WORKDIR /app
 ENV NODE_ENV=production \
     API_PORT=3090 \
     SITE_OUT=/public \
-    SOURCES_PATH=/app/packages/sources/sources.yaml \
     DATA_DIR=/app/data \
     SITE_DIR=/app/apps/daily-web
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/packages ./packages
 COPY --from=build /app/apps/daily-api ./apps/daily-api
 COPY --from=build /app/apps/daily-web ./apps/daily-web
 RUN mkdir -p /app/data /public

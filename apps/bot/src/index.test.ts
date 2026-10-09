@@ -1,13 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import type { Item } from './normalize.ts';
+import { useTestDb } from './test-db.ts';
 
 test('daily pipeline caps the ranking and remembers partial Telegram sends', async (t) => {
-  const dir = mkdtempSync(join(tmpdir(), 'newsbot-pipeline-'));
-  process.env.DB_PATH = join(dir, 'test.db');
   process.env.DRY_RUN = '0';
   process.env.TZ_NAME = 'Europe/Belgrade';
   process.env.MIN_ITEMS = '1';
@@ -17,12 +13,11 @@ test('daily pipeline caps the ranking and remembers partial Telegram sends', asy
   process.env.OPENAI_API_KEY = 'test-key';
   process.env.TELEGRAM_BOT_TOKEN = 'test-token';
   process.env.TELEGRAM_CHANNEL_ID = 'test-channel';
+  const { sql, saveItems, closeDb } = await useTestDb();
   const { runSlot } = await import('./index.ts');
-  const { db, recordNew, closeDb } = await import('./db.ts');
-  t.after(() => {
-    closeDb();
-    rmSync(dir, { recursive: true, force: true });
-  });
+  t.after(closeDb);
+  const count = async (table: string) =>
+    Number((await sql`SELECT count(*)::int AS n FROM ${sql(table)}`)[0].n);
 
   const titles = [
     'Coupon discounts for shoppers',
@@ -80,8 +75,8 @@ test('daily pipeline caps the ranking and remembers partial Telegram sends', asy
     return Promise.resolve(Response.json({ choices: [{ message: { content } }] }));
   });
 
-  recordNew(items);
-  await runSlot();
+  const collect = () => saveItems(items).then(() => undefined);
+  await runSlot(collect);
   assert.equal(sent.length, 10);
   sent.forEach((message, index) => {
     assert.ok(
@@ -90,53 +85,32 @@ test('daily pipeline caps the ranking and remembers partial Telegram sends', asy
     );
     assert.equal((message.match(/<a href=/g) ?? []).length, 1);
   });
-  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM posted').get() as { n: number }).n, 10);
+  assert.equal(await count('bot_posted'), 10);
+  const page = await sql<{ title: string }[]>`SELECT title FROM digest ORDER BY position`;
+  assert.deepEqual(
+    page.map((r) => r.title),
+    titles.slice(1, 11),
+    'the page gets exactly the ten the channel got',
+  );
   const requestsBeforeRetry = requests;
-  await runSlot();
+  await runSlot(collect);
   assert.equal(requests, requestsBeforeRetry, 'repeat run makes no model or Telegram calls');
 
-  db.exec('DELETE FROM posted; DELETE FROM daily_publications; DELETE FROM model_calls;');
-  const legacyPost = db.prepare('INSERT INTO posted VALUES (?, ?, ?, ?)');
-  for (let index = 0; index < 4; index++) {
-    legacyPost.run(`legacy-${index}`, `legacy-${index}`, `Old bulletin ${index}`, Date.now());
-  }
+  // Tomorrow: the same stories are still in the feeds but must not go out again.
+  await sql`DELETE FROM bot_runs`;
   sent = [];
-  await runSlot();
-  assert.equal(sent.length, 0, 'ordinary run respects legacy posts');
-  await runSlot({ rebuildToday: true });
-  assert.equal(
-    sent.length,
-    10,
-    'explicit today rebuild reconsiders consumed stories and sends a fresh ten',
-  );
-  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM posted').get() as { n: number }).n, 14);
-  const requestsAfterRebuild = requests;
-  await runSlot({ rebuildToday: true });
-  assert.equal(
-    requests,
-    requestsAfterRebuild,
-    'today rebuild still cannot repeat the new daily batch',
-  );
+  await runSlot(collect);
+  assert.equal(sent.length, 3, 'only the stories not posted yesterday');
+  assert.ok(sent.every((m) => !titles.slice(1, 11).some((title) => m.includes(`>${title}</a>`))));
 
-  db.exec(
-    'DELETE FROM items; DELETE FROM posted; DELETE FROM daily_publications; DELETE FROM model_calls;',
-  );
+  await sql`DELETE FROM bot_items; DELETE FROM bot_posted; DELETE FROM bot_runs; DELETE FROM digest`.simple();
   sent = [];
   failAt = 3;
-  recordNew(items);
-  await assert.rejects(runSlot(), /Telegram 400/);
+  await assert.rejects(runSlot(collect), /Telegram 400/);
   assert.equal(sent.length, 3);
-  assert.equal((db.prepare('SELECT COUNT(*) AS n FROM posted').get() as { n: number }).n, 3);
-  assert.equal(
-    (
-      db.prepare('SELECT COUNT(*) AS n FROM items WHERE consumed_at IS NOT NULL').get() as {
-        n: number;
-      }
-    ).n,
-    3,
-  );
+  assert.equal(await count('bot_posted'), 3);
   const requestsAfterFailure = requests;
-  await runSlot();
+  await runSlot(collect);
   assert.equal(
     requests,
     requestsAfterFailure,

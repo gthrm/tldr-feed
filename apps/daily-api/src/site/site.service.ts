@@ -8,7 +8,7 @@ import { execFile } from 'node:child_process';
 import { mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
-import type { DayEntry } from '../pipeline/pipeline.service.js';
+import type { DayEntry } from '../shared/entry.js';
 
 const run = promisify(execFile);
 

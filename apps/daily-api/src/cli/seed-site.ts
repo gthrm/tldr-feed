@@ -5,7 +5,7 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from '../app.module.js';
 import { SiteService } from '../site/site.service.js';
-import type { DayEntry } from '../pipeline/pipeline.service.js';
+import type { DayEntry } from '../shared/entry.js';
 import { DateTime } from 'luxon';
 
 const SAMPLE: Omit<DayEntry, 'day' | 'publishedAt' | 'position'>[] = [

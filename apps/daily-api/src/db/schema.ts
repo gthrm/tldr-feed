@@ -1,6 +1,6 @@
 /**
- * Everything the site and the mailing need, and nothing the bot needs: the two
- * applications share the source list and no storage.
+ * The site and the mailing. `digest` is written by the Telegram bot, one row per
+ * posted story; the bot's own tables (bot_*) live in the same database.
  */
 import {
   date,

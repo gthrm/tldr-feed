@@ -1,17 +1,15 @@
 // Enforces the link rule from CLAUDE.md: every link points at a specific
 // article, returns 200, and is never a bare domain root.
-import { db } from '../src/db.ts';
-import { closeDb } from '../src/db.ts';
+import { sql, closeDb } from '../src/db.ts';
 import { isDomainRoot } from '../src/normalize.ts';
 import { UA } from '../src/fetch/parse-feed.ts';
 
+// What actually went out to the channel in the last N hours.
 const hours = Number(process.argv[2] ?? 24);
-const rows = db
-  .prepare(
-    `SELECT i.url, i.title, i.source FROM items i
-     WHERE i.first_seen > ? ORDER BY i.first_seen DESC LIMIT 200`,
-  )
-  .all(Date.now() - hours * 3.6e6) as Row[];
+const rows = await sql<Row[]>`
+  SELECT url, title, 'posted' AS source FROM bot_posted
+  WHERE posted_at > now() - make_interval(hours => ${hours})
+  ORDER BY posted_at DESC LIMIT 200`;
 
 console.log(`checking ${rows.length} links from the last ${hours}h\n`);
 
@@ -50,5 +48,5 @@ for (const r of bad) {
   );
 }
 console.log(`\n  ${out.length - bad.length}/${out.length} ok, ${bad.length} to look at`);
-closeDb();
+await closeDb();
 if (bad.some((r) => r.verdict === 'DOMAIN ROOT')) process.exitCode = 1;

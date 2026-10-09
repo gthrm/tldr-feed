@@ -2,6 +2,7 @@
 
 TLDR-style tech/dev/AI news digest → Telegram channel, once a day at
 10:00 Europe/Belgrade, at most ten stories, each in a separate message.
+The same ten go to the page at tldr.cdroma.me and the email. Nothing else.
 
 Full plan: `~/.claude/plans/graceful-conjuring-ember.md`
 
@@ -9,17 +10,17 @@ Full plan: `~/.claude/plans/graceful-conjuring-ember.md`
 
 A monorepo. Two applications that share one resource and no code:
 
-| path               | what                                                                        |
-| ------------------ | --------------------------------------------------------------------------- |
-| `apps/bot`         | the Telegram bot: daily top ten at 10:00, separate messages, its own SQLite |
-| `apps/daily-api`   | NestJS: the evening run and the subscription endpoints                      |
-| `apps/daily-web`   | SvelteKit: the static day pages at tldr.cdroma.me                           |
-| `packages/sources` | `sources.yaml` — the one source list, read by both apps                     |
+| path               | what                                                                           |
+| ------------------ | ------------------------------------------------------------------------------ |
+| `apps/bot`         | collects at 02:00, 10:00, 18:00; at 10:00 picks and posts the ten              |
+| `apps/daily-api`   | NestJS: at 10:30 builds the page and the email from the bot's ten; no model     |
+| `apps/daily-web`   | SvelteKit: the static day pages at tldr.cdroma.me                              |
+| `packages/sources` | `sources.yaml` — the source list, read by the bot                              |
 
-The bot publishes once in the morning; the daily digest runs once in the evening and builds a page and
-an email. They share the source list and nothing else: no shared code, no shared
-database, no calls between them. Every app resolves the source list from
-`SOURCES_PATH`, falling back to `packages/sources/sources.yaml`.
+**One storage: Postgres on Neon (`DATABASE_URL`).** No SQLite, no files as state.
+The bot owns `bot_items`, `bot_posted`, `bot_runs` and writes each posted story
+into `digest`; daily-api reads `digest` and owns `subscribers`, `mail_log`.
+Only the bot calls the model. Neon wakes three times a day; keep it that way.
 
 ## Working rules
 
@@ -67,21 +68,16 @@ Only these are out: party politics, legislative process with no tech angle,
 celebrity gossip, sport, purely local news, health advice, coupon round-ups
 and advertising.
 
-Only the hottest stories go out, because every item costs model calls: the
-Telegram bot posts up to ten once daily at 10:00 Europe/Belgrade, each in a
-separate message; the
-daily page and email the top 20 (`DAILY_LIMIT`). The cut is made on the ranking,
-before any model call. Posting everything ran ~1000 items a day through the
-model and emptied the OpenAI balance twice (2026-09-29, 2026-10-01).
+Only the hottest stories go out, because every item costs model calls: ten a
+day, posted at 10:00 Europe/Belgrade, each in a separate message, and the same
+ten on the page and in the email. The cut is made on the ranking, before any
+model call. Posting everything ran ~1000 items a day through the model and
+emptied the OpenAI balance twice (2026-09-29, 2026-10-01). A second, separate
+top-20 selection for the page also existed until 2026-10-09; the user never
+wanted it. Do not add one back.
 
 Never invent other limits — no cap per source, no narrower topic filter. If a
 boundary is not in this file, do not add one.
-
-One boundary is in this file, and it is the user's: **the daily digest carries the
-twenty best stories of the day, counted after the relevance gate, not before.**
-That is `DAILY_LIMIT` in `apps/daily-api`. The Telegram bot has its own fixed
-ceiling of ten and a persistent guard allowing one publication attempt per local
-day. Keep the two limits independent.
 
 ### Never hunt for credentials
 
@@ -92,14 +88,15 @@ The canonical name is `OPENAI_API_KEY` — not `OPEN_AI_API_KEY`.
 ### Verify before asserting — never answer from memory
 
 - **Model ids and pricing:** always check the official OpenAI docs before naming a
-  model. The knowledge cutoff makes ids stale; `gpt-5.4-mini` was recommended here
-  and was already two generations old. Current family is GPT-5.6
-  (`sol`/`terra`/`luna`); GPT-6 is flagship-only (`gpt-6-astra`), no cheap tier.
+  model. The knowledge cutoff makes ids stale. As of 2026-10-09 the newest family
+  is GPT-6 (`gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-luna`); `gpt-6-luna` is the
+  cheapest ($0.10/$0.50 per 1M). An earlier note here claimed GPT-6 had no cheap
+  tier — it was wrong.
 - **Feeds and APIs:** check with a live request. Do not claim a site "has RSS".
   Anthropic, Mistral, VentureBeat, x.ai and Meta AI have no usable feed.
 - **Model quality:** never claim a model "will handle it" without running it on
-  real inputs. `OPENAI_MODEL=gpt-5.6-terra` was chosen by an actual bake-off,
-  not by price.
+  real inputs. `OPENAI_MODEL=gpt-6-luna` since 2026-10-09, the user's call for
+  cost. Its token caps include reasoning; caps of 50–300 left it with no answer.
 
 ### Say what is untested, up front
 

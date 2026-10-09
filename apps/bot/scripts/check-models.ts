@@ -1,6 +1,6 @@
 // Model ids go stale fast. Run this at setup and whenever summaries look off.
 const key = process.env.OPENAI_API_KEY;
-const configured = process.env.OPENAI_MODEL ?? 'gpt-5.6-terra';
+const configured = process.env.OPENAI_MODEL ?? 'gpt-5.6-luna';
 if (!key) {
   console.error('OPENAI_API_KEY is not set — put it in .env');
   process.exit(1);

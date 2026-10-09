@@ -11,10 +11,7 @@ import { SubscribersRepository } from './db/subscribers.repository.js';
 import { HealthController } from './health/health.controller.js';
 import { DailyJob } from './jobs/daily.job.js';
 import { MailService } from './mail/mail.service.js';
-import { FetchService } from './pipeline/fetch.service.js';
-import { PipelineService } from './pipeline/pipeline.service.js';
 import { SiteService } from './site/site.service.js';
-import { SourcesService } from './sources/sources.service.js';
 import { CloudflareThrottlerGuard } from './subscriptions/cf-throttler.guard.js';
 import { FormErrorsFilter } from './subscriptions/form-errors.filter.js';
 import { SubscriptionsController } from './subscriptions/subscriptions.controller.js';
@@ -28,9 +25,6 @@ import { SubscriptionsService } from './subscriptions/subscriptions.service.js';
   ],
   controllers: [HealthController, SubscriptionsController],
   providers: [
-    SourcesService,
-    FetchService,
-    PipelineService,
     SiteService,
     DbService,
     DigestRepository,
@@ -41,11 +35,11 @@ import { SubscriptionsService } from './subscriptions/subscriptions.service.js';
     DailyJob,
     { provide: APP_GUARD, useClass: CloudflareThrottlerGuard },
   ],
-  exports: [PipelineService, SiteService, DailyJob, DbService],
+  exports: [SiteService, DailyJob, DbService],
 })
 export class AppModule {}
 
 // Only the HTTP daemon owns the schedule. CLI previews, builds and dry runs
-// must never start an independent evening job in the background.
+// must never start an independent job in the background.
 @Module({ imports: [AppModule, ScheduleModule.forRoot()] })
 export class ApiModule {}

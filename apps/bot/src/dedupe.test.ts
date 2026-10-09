@@ -102,27 +102,3 @@ test('a digest sends exactly one complete message per story', async () => {
     assert.equal((m.match(/<a href=/g) ?? []).length, (m.match(/<\/a>/g) ?? []).length);
   }
 });
-
-test('cold start is detected on an empty database', async () => {
-  // A temp dir, not data/: test databases must not pile up next to the live one.
-  const { tmpdir } = await import('node:os');
-  const { join } = await import('node:path');
-  process.env.DB_PATH = join(tmpdir(), `newsbot-coldstart-${Date.now()}.db`);
-  const mod = (await import(`./db.ts?t=${Date.now()}`)) as typeof import('./db.ts');
-  const { isColdStart, recordNew } = mod;
-  assert.equal(isColdStart(), true);
-  recordNew([
-    {
-      id: 'x1',
-      source: 's',
-      section: 'bigtech',
-      title: 't',
-      url: 'https://e.com/1',
-      domain: 'e.com',
-      publishedAt: new Date(),
-      rawSummary: '',
-      weight: 1,
-    },
-  ]);
-  assert.equal(isColdStart(), false);
-});

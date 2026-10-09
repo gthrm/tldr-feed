@@ -1,14 +1,14 @@
 // TLDR-style summaries. The prompt is the one the model bake-off was run with;
-// gpt-5.6-terra was chosen over gpt-5.6-luna because it picks the detail that
-// matters rather than the first number it finds.
-import { cacheSummary, cachedSummary, spendModelCall } from './db.ts';
+// gpt-6-luna since 2026-10-09: the user's choice, the newest and cheapest tier
+// ($0.10/$0.50 per 1M). Terra had won the old bake-off but cost ~20x more.
+import { spendModelCall } from './db.ts';
 import type { Article } from './extract.ts';
 import { MAX_DAILY_POSTS } from './publication.ts';
 
-const MODEL = process.env.OPENAI_MODEL ?? 'gpt-5.6-terra';
+const MODEL = process.env.OPENAI_MODEL ?? 'gpt-6-luna';
 const API = 'https://api.openai.com/v1/chat/completions';
-// 10 posted items a day need about 20 calls; the rest is room for rejects and
-// dedup tiebreaks. Past this the bot stays silent until tomorrow.
+// 10 posted items a day need about 20 calls; the rest is room for rejects,
+// dedup tiebreaks and the one repeat check. Past this the bot stays silent until tomorrow.
 const DAILY_CALLS = Number(process.env.MAX_MODEL_CALLS_PER_DAY ?? 100);
 
 export const PROMPT = `You write TLDR-newsletter-style summaries of tech news.
@@ -42,13 +42,13 @@ type ChatResponse = {
   choices?: { message?: { content?: string }; finish_reason?: string }[];
 };
 
-async function call(messages: ChatMessage[], maxTokens = 300, reserve = 0): Promise<string> {
+async function call(messages: ChatMessage[], maxTokens = 2000, reserve = 0): Promise<string> {
   const key = process.env.OPENAI_API_KEY;
   if (!key) throw new Error('OPENAI_API_KEY is not set');
 
   let last = '';
   for (let attempt = 0; attempt < 3; attempt++) {
-    if (!spendModelCall(DAILY_CALLS, reserve)) {
+    if (!(await spendModelCall(DAILY_CALLS, reserve))) {
       throw new Error(`daily model budget spent (${DAILY_CALLS} calls)`);
     }
     const res = await fetch(API, {
@@ -79,15 +79,10 @@ async function call(messages: ChatMessage[], maxTokens = 300, reserve = 0): Prom
 }
 
 export async function summarize(title: string, article: Article): Promise<string | null> {
-  const hit = cachedSummary(article.hash, MODEL);
-  if (hit) return hit.summary;
-
   const text = await call([
     { role: 'user', content: PROMPT.replace('{title}', title).replace('{text}', article.text) },
   ]);
   if (!text || text === 'INSUFFICIENT') return null;
-
-  cacheSummary(article.hash, MODEL, text, article.minutes);
   return text;
 }
 
@@ -102,12 +97,50 @@ export async function sameStory(a: string, b: string): Promise<boolean> {
           `A: ${a}\nB: ${b}`,
       },
     ],
-    50,
+    1000,
     // Leave two calls per story plus room for rejected candidates. A full day's
     // grey-band comparisons must not exhaust the budget before any story is ready.
     MAX_DAILY_POSTS * 4,
   );
   return /^yes/i.test(answer.trim());
+}
+
+/**
+ * Story-level dedup, one call per slot. Title similarity misses one event told
+ * under different headlines ("OpenAI withdraws three mathematical results" and
+ * "Terence Tao Responds to the OpenAI Math Drop" went out on consecutive days).
+ * Returns the indexes of candidates that repeat a posted story or an earlier
+ * candidate.
+ */
+export async function repeatedStories(
+  candidates: string[],
+  posted: string[],
+): Promise<Set<number>> {
+  if (candidates.length < 2 && posted.length === 0) return new Set();
+  const answer = await call(
+    [
+      {
+        role: 'user',
+        content: `Which of these candidate headlines report the same news event, topic or announcement as an already posted headline, or as an earlier candidate in the list? Reactions, follow-ups and commentary on an event count as the same story.
+
+Already posted:
+${posted.map((t) => `- ${t}`).join('\n') || '- (none)'}
+
+Candidates:
+${candidates.map((t, i) => `${i + 1}. ${t}`).join('\n')}
+
+Answer with the candidate numbers to drop, comma-separated, or NONE. Nothing else.`,
+      },
+    ],
+    2000,
+    MAX_DAILY_POSTS * 2,
+  );
+  const out = new Set<number>();
+  for (const m of answer.matchAll(/\d+/g)) {
+    const n = Number(m[0]) - 1;
+    if (n >= 0 && n < candidates.length) out.add(n);
+  }
+  return out;
 }
 
 export type Classification = {
@@ -170,7 +203,7 @@ Answer with exactly three comma-separated values, nothing else:
 Example answer: RELEVANT, BIGTECH, NEWS`,
       },
     ],
-    200, // a tight cap truncates the answer and the whole call fails
+    1000, // the cap includes reasoning; a tight one leaves no answer at all
   );
 
   // The answer may arrive with stray words around it; match rather than split blindly.

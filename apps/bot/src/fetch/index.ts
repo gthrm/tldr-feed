@@ -6,7 +6,6 @@ import { fetchFeed, UA } from './parse-feed.ts';
 import { fetchSitemap } from './sitemap.ts';
 import { fetchWithBrowser } from './browser.ts';
 import { canonicalizeUrl, resolveRedirects, hashUrl, domainOf, type Item } from '../normalize.ts';
-import { getSourceState, setSourceState } from '../db.ts';
 
 export type Source = {
   id: string;
@@ -168,10 +167,8 @@ async function fetchRaw(src: Source, rsshubBase: string): Promise<Raw[]> {
     case 'feed':
     case 'rsshub': {
       const url = src.kind === 'rsshub' ? `${rsshubBase}${src.route}` : src.url!;
-      const state = src.kind === 'feed' ? getSourceState(src.id) : undefined;
-      const res = await fetchFeed(url, state?.etag ?? undefined, state?.last_modified ?? undefined);
-      if (src.kind === 'feed')
-        setSourceState(src.id, { etag: res.etag, lastModified: res.lastModified });
+      // Once a day there is nothing to save with a conditional GET.
+      const res = await fetchFeed(url);
       return res.notModified ? [] : (res.items as Raw[]);
     }
   }
@@ -184,7 +181,7 @@ export async function fetchSource(src: Source, rsshubBase: string): Promise<Item
     raw = await fetchRaw(src, rsshubBase);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    setSourceState(src.id, { error: message.slice(0, 200) });
+    console.log(new Date().toISOString(), `source ${src.id} failed: ${message.slice(0, 200)}`);
     return [];
   }
 

@@ -4,25 +4,20 @@ import { closeBrowser, fetchHtmlWithBrowser } from './fetch/browser.ts';
 import { clusterItems, compare } from './dedupe.ts';
 import { rankClusters } from './rank.ts';
 import { extractArticle } from './extract.ts';
-import { summarize, sameStory, classify } from './summarize.ts';
+import { summarize, sameStory, classify, repeatedStories } from './summarize.ts';
 import { formatDigest, type Entry } from './format.ts';
 import { sendMessage } from './telegram.ts';
 import {
-  recordNew,
   recordPosted,
-  wasPosted,
-  recentPostedTitles,
-  prune,
-  pendingItems,
-  markConsumed,
+  recentPosted,
   closeDb,
   claimDailyPublication,
-  collectedToday,
+  initDb,
+  saveItems,
+  collectedSince,
 } from './db.ts';
 import { isDomainRoot } from './normalize.ts';
-import { startSchedule } from './schedule.ts';
-import type { Item } from './normalize.ts';
-import type { ItemRow } from './db.ts';
+import { POLLS, startSchedule } from './schedule.ts';
 import { MAX_DAILY_POSTS, publicationDay, TZ } from './publication.ts';
 
 // A slot is skipped only when nothing new survived.
@@ -47,46 +42,35 @@ process.on('uncaughtException', (err) => {
   log('uncaught exception (continuing):', err?.message ?? err);
 });
 
-/**
- * Collection only, every 20 minutes. Fast feeds rotate stories out long before
- * the next morning's publication, so save them without posting anything.
- */
+// Feeds also carry old posts; only what appeared since about yesterday's run is
+// a candidate. Undated items count as new.
+const MAX_AGE_HOURS = 36;
+
+/** One collection: fetch every source and keep what is new. Posts nothing. */
 export async function poll(): Promise<void> {
-  const { sources } = loadSources();
-  const all = await fetchAll(sources, RSSHUB);
-  const fresh = recordNew(all); // stage 1: same url, already seen
-  log(`poll: ${all.length} items seen, ${fresh.length} new queued`);
+  const all = await fetchAll(loadSources().sources, RSSHUB);
+  const added = await saveItems(all);
+  log(`poll: ${all.length} items seen, ${added} new`);
 }
 
-function rowToItem(r: ItemRow): Item {
-  return {
-    id: r.id,
-    source: r.source,
-    section: r.section,
-    weight: r.weight,
-    title: r.title,
-    url: r.url,
-    domain: r.domain,
-    publishedAt: r.published_at ? new Date(r.published_at) : null,
-    rawSummary: r.raw_summary ?? '',
-    points: r.points ?? undefined,
-  };
-}
-
-export async function runSlot(options: { rebuildToday?: boolean } = {}): Promise<void> {
+/** The day's publication: a last collection, then the ten best since yesterday. */
+export async function runSlot(collect: () => Promise<void> = poll): Promise<void> {
   const startedAt = new Date();
-  const rebuildToday = options.rebuildToday ?? false;
-  if (!DRY_RUN && !claimDailyPublication(startedAt, rebuildToday)) {
+  if (!DRY_RUN && !(await claimDailyPublication(startedAt))) {
     log('daily publication already attempted — skipped');
     return;
   }
-  // Whatever the poller has queued since the last slot. No fetching here: the
-  // slot publishes what was already collected.
-  const fresh = (rebuildToday ? collectedToday(startedAt) : pendingItems()).map(rowToItem);
-  log(`slot: ${fresh.length} items queued since the last slot`);
+
+  await collect();
+  // First seen since yesterday's publication; published recently, or undated.
+  const cutoff = startedAt.getTime() - MAX_AGE_HOURS * 3.6e6;
+  const fresh = (await collectedSince(24)).filter(
+    (i) => !i.publishedAt || i.publishedAt.getTime() >= cutoff,
+  );
+  log(`slot: ${fresh.length} candidates collected since yesterday`);
 
   if (fresh.length === 0) {
-    log('nothing new — slot skipped');
+    log('nothing new — skipped');
     return;
   }
 
@@ -99,15 +83,31 @@ export async function runSlot(options: { rebuildToday?: boolean } = {}): Promise
     }
   });
 
-  // stage 4: cross-slot memory, by cluster key and by title similarity
-  const recent = recentPostedTitles();
+  // stage 4: what earlier days posted, by cluster key and by title similarity
+  const recent = await recentPosted();
+  const postedKeys = new Set(recent.map((p) => p.cluster_key));
   const unseen = clusters.filter((c) => {
-    if (wasPosted(c.key)) return false;
+    if (c.items.some((i) => postedKeys.has(i.id))) return false;
     return !recent.some((p) => compare(c.items[0].title, p.title).verdict === 'same');
   });
   log(`${clusters.length} clusters, ${unseen.length} not posted before`);
 
-  const ranked = rankClusters(unseen);
+  // stage 5: the same event under different headlines, judged by the model on
+  // the top of the ranking against the last few days of posts
+  let ranked = rankClusters(unseen);
+  const head = ranked.slice(0, MAX_ITEMS * 4);
+  try {
+    const drop = await repeatedStories(
+      head.map((c) => c.items[0].title),
+      recent.slice(0, MAX_ITEMS * 4).map((p) => p.title),
+    );
+    if (drop.size) {
+      head.forEach((c, i) => drop.has(i) && log(`skip (repeat): ${c.items[0].title.slice(0, 60)}`));
+      ranked = [...head.filter((_, i) => !drop.has(i)), ...ranked.slice(head.length)];
+    }
+  } catch (err) {
+    log('repeat check failed (continuing):', err);
+  }
 
   // Process candidates concurrently, preserving rank and the daily ceiling.
   const CONCURRENCY = Number(process.env.PIPELINE_CONCURRENCY ?? 6);
@@ -192,24 +192,16 @@ export async function runSlot(options: { rebuildToday?: boolean } = {}): Promise
   // rank order preserved: the slot array is filled by index, not by finish time
   const entries: Entry[] = slots.filter((e): e is Entry => e !== null);
 
-  if (entries.length < MIN_ITEMS && modelFailures >= MAX_MODEL_FAILURES) {
-    // Keep the queue for tomorrow; there is no second publication today.
-    log(`model failed ${modelFailures} times — slot aborted, queue kept`);
-    return;
-  }
-
   if (entries.length < MIN_ITEMS) {
-    // Nothing made it, but everything was considered: rejects must not be
-    // reconsidered at every later slot.
-    if (!DRY_RUN) markConsumed(fresh.map((i) => i.id));
-    log(`only ${entries.length} items survived (min ${MIN_ITEMS}) — slot skipped`);
+    const why = modelFailures >= MAX_MODEL_FAILURES ? `model failed ${modelFailures} times` : '';
+    log(`only ${entries.length} items survived (min ${MIN_ITEMS}) — skipped ${why}`.trim());
     return;
   }
 
   const messages = formatDigest(entries, startedAt, TZ);
 
   if (DRY_RUN) {
-    // A preview must not eat the queue: nothing is marked consumed here.
+    // A preview records nothing.
     console.log('\n' + '='.repeat(72) + `\nDRY RUN — not posted\n` + '='.repeat(72));
     messages.forEach((m, i) =>
       console.log(`\n--- message ${i + 1}/${messages.length} (${m.length} chars) ---\n${m}`),
@@ -222,50 +214,39 @@ export async function runSlot(options: { rebuildToday?: boolean } = {}): Promise
 
   // Record each successful message immediately so a partial failure cannot
   // repost it tomorrow. The persistent daily claim prevents retries today.
+  const day = publicationDay(startedAt);
   for (const [idx, e] of entries.entries()) {
-    if (publicationDay() !== publicationDay(startedAt)) {
-      log('publication crossed midnight — remaining posts kept for tomorrow');
+    if (publicationDay() !== day) {
+      log('publication crossed midnight — remaining posts dropped');
       return;
     }
     await sendMessage(messages[idx]);
     const cluster = ranked.find((c) => c.items[0].url === e.url);
-    if (cluster) {
-      recordPosted(cluster.key, cluster.items[0].id, e.title);
-      markConsumed(cluster.items.map((item) => item.id));
+    try {
+      await recordPosted(cluster?.key ?? e.url, day, e, idx);
+    } catch (err) {
+      // The message is out; a database outage must not stop the rest.
+      log(`recording ${e.url} failed:`, err);
     }
   }
-  markConsumed(fresh.map((i) => i.id));
   log(`posted ${entries.length} items`);
 }
 
 async function main(): Promise<void> {
-  // `--slot` runs one full cycle by hand: collect, then publish.
-  if (
-    process.argv.includes('--slot') ||
-    process.argv.includes('--once') ||
-    process.argv.includes('--today')
-  ) {
+  await initDb();
+  // `--once` runs the day's publication by hand; `--poll` one collection.
+  const once = process.argv.includes('--once') || process.argv.includes('--slot');
+  if (once || process.argv.includes('--poll')) {
     try {
-      await poll();
-      await runSlot({ rebuildToday: process.argv.includes('--today') });
+      await (once ? runSlot() : poll());
     } finally {
       await closeBrowser();
-      closeDb();
+      await closeDb();
     }
     return;
   }
-  if (process.argv.includes('--poll')) {
-    try {
-      await poll();
-    } finally {
-      await closeBrowser();
-      closeDb();
-    }
-    return;
-  }
-  prune();
   startSchedule(runSlot, poll);
-  log(`scheduler started: daily top ${MAX_ITEMS} at 10:00 ${TZ}, one story per message`);
+  log(`scheduler started: collect at ${POLLS.join(', ')}; daily top ${MAX_ITEMS} at 10:00 ${TZ}`);
 }
 
 if (import.meta.main) await main();
